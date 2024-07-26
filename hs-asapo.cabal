@@ -1,0 +1,29 @@
+cabal-version:  3.4
+name:           hs-asapo
+version:        1.0.0
+description:    Haskell bindings for ASAP:O
+homepage:       https://github.com/pmiddend/hs-asapo
+bug-reports:    https://github.com/pmiddend/hs-asapo/issues
+author:         Philipp Middendorf
+maintainer:     philipp.middendorf@desy.de
+copyright:      2024 Philipp Middendorf
+license:        GPL-3.0-or-later
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/pmiddend/hs-asapo
+
+executable hs-asapo
+  main-is: Main.hs
+  ghc-options: -Weverything -Wno-missing-safe-haskell-mode -Wno-unsafe -Wno-missing-deriving-strategies -Wno-all-missed-specialisations -Wno-monomorphism-restriction -Wno-safe -Wno-missing-local-signatures -Wno-prepositive-qualified-module -threaded -rtsopts -with-rtsopts=-N -Wno-missing-kind-signatures -Wno-missed-specializations
+  other-modules: Asapo.Raw
+  hs-source-dirs:
+      app
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+
+  pkgconfig-depends: libasapo-consumer
+                   , libasapo-producer

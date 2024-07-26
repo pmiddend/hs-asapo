@@ -1,0 +1,30 @@
+diff --git a/CMakeIncludes/prepare_version_tag.cmake b/CMakeIncludes/prepare_version_tag.cmake
+index fbeab67c..fd38a986 100644
+--- a/CMakeIncludes/prepare_version_tag.cmake
++++ b/CMakeIncludes/prepare_version_tag.cmake
+@@ -33,21 +33,10 @@ if (DEFINED ENV{CI_COMMIT_REF_NAME})
+     return ()
+ endif ()
+ 
+-execute_process(COMMAND git describe --tags --abbrev=0
+-        OUTPUT_VARIABLE ASAPO_TAG
+-        WORKING_DIRECTORY ..)
+-string(STRIP ${ASAPO_TAG} ASAPO_TAG)
+-
+-execute_process(COMMAND git rev-parse --abbrev-ref HEAD
+-        OUTPUT_VARIABLE BRANCH
+-        WORKING_DIRECTORY ..)
+-string(STRIP ${BRANCH} BRANCH)
+-cleanup(BRANCH)
+-
+-execute_process(COMMAND git rev-parse --short=10 HEAD
+-        OUTPUT_VARIABLE ASAPO_VERSION_COMMIT
+-        WORKING_DIRECTORY ..)
+-string(STRIP ${ASAPO_VERSION_COMMIT} ASAPO_VERSION_COMMIT)
++SET(ASAPO_TAG "23.11.1")
++SET(BRANCH "23.11.1")
++SET(ASAPO_VERSION_COMMIT "23.11.1")
++SET(ASAPO_VERSION "23.11.1")
+ 
+ if (${BRANCH} STREQUAL "master")
+     SET(ASAPO_VERSION ${ASAPO_TAG})
