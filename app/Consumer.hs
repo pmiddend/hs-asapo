@@ -1,14 +1,20 @@
+{-# LANGUAGE BlockArguments #-}
+
 module Main (main) where
 
 import Asapo.Raw
 import Control.Concurrent (threadDelay)
+import Control.Monad (forM_)
 import Data.Bits ((.|.))
-import Foreign.C.String (withCString)
+import Foreign.C.String (peekCString, withCString)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (castPtr)
+import Foreign.Storable (peek)
+import System.Clock (TimeSpec (TimeSpec))
 
 hstoken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjk1NzE3MTAyMTYsImp0aSI6Ind0ZmlzdGhpcyIsInN1YiI6ImJ0X2FzYXBvX3Rlc3QiLCJFeHRyYUNsYWltcyI6eyJBY2Nlc3NUeXBlcyI6WyJ3cml0ZSIsIndyaXRlcmF3IiwicmVhZCJdfX0.cz6R_kVf4yh7IJD6bJjDdgTaxPN3txudZx9DE6WaTtk"
 
+main :: IO ()
 main = do
   err <- asapo_new_handle
   mm <- asapo_new_handle
@@ -33,5 +39,26 @@ main = do
                   size <- asapo_stream_infos_get_size infosHandle
 
                   putStrLn $ show size <> " stream(s)"
+
+                  forM_ [0 .. size - 1] \index -> do
+                    info <- asapo_stream_infos_get_item infosHandle index
+                    lastId <- asapo_stream_info_get_last_id info
+                    putStrLn $ "stream " <> show index <> " last ID " <> show lastId
+                    nameC <- asapo_stream_info_get_name info
+                    name <- peekCString nameC
+                    putStrLn $ "stream " <> show index <> " name " <> name
+                    finished <- asapo_stream_info_get_finished info
+                    putStrLn $ "stream " <> show index <> " finished " <> show finished
+                    nextStreamC <- asapo_stream_info_get_next_stream info
+                    nextStream <- peekCString nextStreamC
+                    putStrLn $ "stream " <> show index <> " next stream " <> nextStream
+                    timestampCreated <- with (TimeSpec 0 0) \timespecPtr -> do
+                      asapo_stream_info_get_timestamp_created info timespecPtr
+                      peek timespecPtr
+                    putStrLn $ "stream " <> show index <> " created " <> show timestampCreated
+                    timestampLast_Entry <- with (TimeSpec 0 0) \timespecPtr -> do
+                      asapo_stream_info_get_timestamp_last_entry info timespecPtr
+                      peek timespecPtr
+                    putStrLn $ "stream " <> show index <> " last_entry " <> show timestampLast_Entry
 
                   threadDelay (1000 * 1000 * 5)

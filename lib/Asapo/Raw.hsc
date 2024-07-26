@@ -9,6 +9,7 @@ import Data.Bits (shiftL, (.|.))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
 import Foreign.Ptr (FunPtr, Ptr)
+import System.Clock (TimeSpec (TimeSpec))
 import System.IO (IO)
 import Prelude ()
 
@@ -25,6 +26,8 @@ type AsapoErrorHandle = Ptr ()
 type AsapoProducerHandle = Ptr ()
 
 type AsapoStreamInfosHandle = Ptr ()
+
+type AsapoStreamInfoHandle = Ptr ()
 
 foreign import capi "asapo/common/common_c.h asapo_is_error" asapo_is_error :: AsapoErrorHandle -> IO AsapoBool
 
@@ -46,6 +49,26 @@ foreign import ccall "asapo/consumer_c.h asapo_consumer_get_stream_list" asapo_c
 
 foreign import capi "asapo/consumer_c.h asapo_stream_infos_get_size" asapo_stream_infos_get_size :: AsapoStreamInfosHandle -> IO CSize
 
+foreign import capi "asapo/common/common_c.h asapo_stream_infos_get_item"
+  asapo_stream_infos_get_item ::
+    AsapoStreamInfosHandle ->
+    -- index
+    CSize ->
+    IO AsapoStreamInfoHandle
+
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_last_id" asapo_stream_info_get_last_id :: AsapoStreamInfosHandle -> IO CULong
+
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_name" asapo_stream_info_get_name :: AsapoStreamInfosHandle -> IO CString
+
+-- Yes, this has a typo. Corrected in the Haskell function name
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_ffinished" asapo_stream_info_get_finished :: AsapoStreamInfosHandle -> IO AsapoBool
+
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_next_stream" asapo_stream_info_get_next_stream :: AsapoStreamInfosHandle -> IO CString
+
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_timestamp_created" asapo_stream_info_get_timestamp_created :: AsapoStreamInfosHandle -> Ptr TimeSpec -> IO ()
+
+foreign import capi "asapo/common/common_c.h asapo_stream_info_get_timestamp_last_entry" asapo_stream_info_get_timestamp_last_entry :: AsapoStreamInfosHandle -> Ptr TimeSpec -> IO ()
+
 kProcessed :: CInt
 kProcessed = 0
 
@@ -60,6 +83,9 @@ kFinishedStreams = 1
 
 kUnfinishedStreams :: CInt
 kUnfinishedStreams = 2
+
+-----------------------------------------------------------------------
+-- producer
 
 foreign import ccall "asapo/producer_c.h asapo_create_producer"
   asapo_create_producer ::

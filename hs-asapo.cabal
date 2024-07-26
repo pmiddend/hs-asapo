@@ -24,6 +24,8 @@ library
   build-depends:
       base >=4.7 && <5
     , bytestring
+    -- for timespec data type (is Storable)
+    , clock
 
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
@@ -51,4 +53,6 @@ executable simple-consumer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
+    -- for timespec data type (is Storable)
+    , clock
     , bytestring
