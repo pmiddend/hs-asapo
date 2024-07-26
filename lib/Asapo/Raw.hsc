@@ -5,9 +5,12 @@
 
 module Asapo.Raw where
 
+import Data.Bits (shiftL, (.|.))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
 import Foreign.Ptr (FunPtr, Ptr)
+import System.IO (IO)
+import Prelude ()
 
 type AsapoBool = CInt
 
@@ -37,9 +40,9 @@ foreign import capi "asapo/consumer_c.h asapo_create_source_credentials" asapo_c
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_set_timeout" asapo_consumer_set_timeout :: AsapoConsumerHandle -> CULong -> IO ()
 
-foreign import capi "asapo/consumer_c.h asapo_consumer_generate_new_group_id" asapo_consumer_generate_new_group_id :: AsapoConsumerHandle -> Ptr AsapoErrorHandle -> IO AsapoStringHandle
+foreign import ccall "asapo/consumer_c.h asapo_consumer_generate_new_group_id" asapo_consumer_generate_new_group_id :: AsapoConsumerHandle -> Ptr AsapoErrorHandle -> IO AsapoStringHandle
 
-foreign import capi "asapo/consumer_c.h asapo_consumer_get_stream_list" asapo_consumer_get_stream_list :: AsapoConsumerHandle -> CString -> CInt -> Ptr AsapoErrorHandle -> IO AsapoStreamInfosHandle
+foreign import ccall "asapo/consumer_c.h asapo_consumer_get_stream_list" asapo_consumer_get_stream_list :: AsapoConsumerHandle -> CString -> CInt -> Ptr AsapoErrorHandle -> IO AsapoStreamInfosHandle
 
 foreign import capi "asapo/consumer_c.h asapo_stream_infos_get_size" asapo_stream_infos_get_size :: AsapoStreamInfosHandle -> IO CSize
 
@@ -58,7 +61,7 @@ kFinishedStreams = 1
 kUnfinishedStreams :: CInt
 kUnfinishedStreams = 2
 
-foreign import capi "asapo/producer_c.h asapo_create_producer"
+foreign import ccall "asapo/producer_c.h asapo_create_producer"
   asapo_create_producer ::
     CString ->
     CUChar ->
@@ -76,29 +79,55 @@ foreign import ccall "wrapper" createRequestCallback :: AsapoRequestCallback -> 
 
 type AsapoMessageHeaderHandle = Ptr ()
 
-foreign import capi "asapo/producer_c.h asapo_create_message_header"
+foreign import ccall "asapo/producer_c.h asapo_create_message_header"
   asapo_create_message_header ::
+    -- message ID
     CULong ->
+    -- data size
+    CULong ->
+    -- file name
     CString ->
+    -- user metadata
     CString ->
+    -- dataset substream
     CULong ->
+    -- dataset size
     CULong ->
+    -- auto id
     AsapoBool ->
     IO AsapoMessageHeaderHandle
 
-foreign import capi "asapo/producer_c.h asapo_producer_send"
+foreign import ccall "asapo/producer_c.h asapo_producer_send"
   asapo_producer_send ::
     AsapoProducerHandle ->
     AsapoMessageHeaderHandle ->
+    -- data
     Ptr () ->
+    -- ingest mode
     CULong ->
+    -- stream
     CString ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
-    IO AsapoProducerHandle
+    IO CInt
 
 kTcp :: CInt
 kTcp = 0
 
 kFilesystem :: CInt
 kFilesystem = 1
+
+kTransferData :: CULong
+kTransferData = 1
+
+kTransferMetaDataOnly :: CULong
+kTransferMetaDataOnly = shiftL 1 1
+
+kStoreInFilesystem :: CULong
+kStoreInFilesystem = shiftL 1 2
+
+kStoreInDatabase :: CULong
+kStoreInDatabase = shiftL 1 3
+
+kDefaultIngestMode :: CULong
+kDefaultIngestMode = kTransferData .|. kStoreInFilesystem .|. kStoreInDatabase
