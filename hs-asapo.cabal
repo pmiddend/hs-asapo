@@ -41,7 +41,6 @@ executable simple-producer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
-    , bytestring
     
 executable simple-consumer
   import: warnings
@@ -55,4 +54,3 @@ executable simple-consumer
     , hs-asapo
     -- for timespec data type (is Storable)
     , clock
-    , bytestring
