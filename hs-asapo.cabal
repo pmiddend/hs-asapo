@@ -20,7 +20,7 @@ common warnings
     
 library
   import: warnings
-  exposed-modules: Asapo.Raw
+  exposed-modules: Asapo.Raw.Common, Asapo.Raw.Consumer, Asapo.Raw.Producer
   build-depends:
       base >=4.7 && <5
     , bytestring

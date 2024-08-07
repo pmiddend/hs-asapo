@@ -69,7 +69,7 @@ main = do
                 case producer' of
                   Nothing -> pure ()
                   Just producer -> do
-                    let messageId = 300
+                    let messageId = 301
                         stringToSend = "teststring"
                         dataSize = fromIntegral (length stringToSend + 1)
                         fileName = "raw/file.txt"

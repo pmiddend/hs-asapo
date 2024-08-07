@@ -2,14 +2,39 @@
 
 module Main (main) where
 
-import Asapo.Raw (AsapoConsumerHandle, AsapoErrorHandle, asapo_consumer_generate_new_group_id, asapo_consumer_get_next, asapo_consumer_get_stream_list, asapo_consumer_set_timeout, asapo_create_consumer, asapo_create_source_credentials, asapo_is_error, asapo_new_error_handle, asapo_new_message_data_handle, asapo_new_message_meta_handle, asapo_stream_info_get_finished, asapo_stream_info_get_last_id, asapo_stream_info_get_name, asapo_stream_info_get_next_stream, asapo_stream_info_get_timestamp_created, asapo_stream_info_get_timestamp_last_entry, asapo_stream_infos_get_item, asapo_stream_infos_get_size, kAllStreams, kProcessed)
+import Asapo.Raw.Common
+  ( AsapoErrorHandle,
+    asapo_create_source_credentials,
+    asapo_is_error,
+    asapo_new_error_handle,
+    asapo_new_message_data_handle,
+    asapo_stream_info_get_finished,
+    asapo_stream_info_get_last_id,
+    asapo_stream_info_get_name,
+    asapo_stream_info_get_next_stream,
+    asapo_stream_info_get_timestamp_created,
+    asapo_stream_info_get_timestamp_last_entry,
+    asapo_stream_infos_get_item,
+    kProcessed,
+  )
+import Asapo.Raw.Consumer
+  ( AsapoConsumerHandle,
+    asapo_consumer_generate_new_group_id,
+    asapo_consumer_get_next,
+    asapo_consumer_get_stream_list,
+    asapo_consumer_set_timeout,
+    asapo_create_consumer,
+    asapo_new_message_meta_handle,
+    asapo_stream_infos_get_size,
+    kAllStreams,
+  )
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_, when)
 import Data.Function (($))
 import Data.Ord (Ord ((<), (>)))
 import Data.Semigroup (Semigroup ((<>)))
 import Data.String (String)
-import Foreign.C.ConstPtr (ConstPtr (unConstPtr))
+import Foreign.C.ConstPtr (ConstPtr (ConstPtr, unConstPtr))
 import Foreign.C.String (peekCString, withCString)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable (peek)
@@ -29,7 +54,7 @@ exitIfError err = do
 listStreams :: AsapoConsumerHandle -> AsapoErrorHandle -> IO ()
 listStreams consumer err = do
   infosHandle <- withCString "" $ \fromStream ->
-    with err (asapo_consumer_get_stream_list consumer fromStream kAllStreams)
+    with err (asapo_consumer_get_stream_list consumer (ConstPtr fromStream) kAllStreams)
   exitIfError err
 
   size <- asapo_stream_infos_get_size infosHandle
@@ -86,7 +111,7 @@ main = do
                       \metaHandlePtr -> with dataHandle $
                         \dataHandlePtr ->
                           withCString "kacke" $
-                            \stream -> asapo_consumer_get_next consumer group_id metaHandlePtr dataHandlePtr stream errPtr
+                            \stream -> asapo_consumer_get_next consumer group_id metaHandlePtr dataHandlePtr (ConstPtr stream) errPtr
                   exitIfError err
 
                   when (resultOfGetNext < 0) do
