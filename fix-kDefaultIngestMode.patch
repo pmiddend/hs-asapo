@@ -1,0 +1,13 @@
+diff --git a/producer/api/c/include/asapo/producer_c.h b/producer/api/c/include/asapo/producer_c.h
+index 34ca22bb..79cf8fe3 100644
+--- a/producer/api/c/include/asapo/producer_c.h
++++ b/producer/api/c/include/asapo/producer_c.h
+@@ -62,7 +62,7 @@ enum AsapoIngestModeFlags {
+     kStoreInDatabase = 1 << 3,
+ };
+ 
+-const uint64_t kDefaultIngestMode = kTransferData | kStoreInFilesystem | kStoreInDatabase;
++#define kDefaultIngestMode kTransferData | kStoreInFilesystem | kStoreInDatabase
+ 
+ 
+ //! c version of asapo::MetaIngestOp

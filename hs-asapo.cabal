@@ -20,10 +20,13 @@ common warnings
     
 library
   import: warnings
-  exposed-modules: Asapo.Raw.Common, Asapo.Raw.Consumer, Asapo.Raw.Producer
+  exposed-modules: Asapo.Raw.Common
+                 , Asapo.Raw.Consumer
+                 , Asapo.Raw.Producer
+                 , Asapo.Raw.AsapoOpcode
+                 , Asapo.Raw.AsapoGenericRequestHeader
   build-depends:
       base >=4.7 && <5
-    , bytestring
     -- for timespec data type (is Storable)
     , clock
 

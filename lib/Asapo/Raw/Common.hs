@@ -1,6 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CApiFFI #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
@@ -22,6 +20,7 @@ module Asapo.Raw.Common
     asapo_free_handle,
     asapo_new_message_data_handle,
     asapo_create_source_credentials,
+    AsapoStreamInfoHandle (AsapoStreamInfoHandle),
     asapo_stream_infos_get_item,
     asapo_stream_info_get_last_id,
     asapo_stream_info_get_name,

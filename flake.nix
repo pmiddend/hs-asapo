@@ -49,7 +49,7 @@
             ];
 
             cmakeFlags = [
-              # "-DBUILD_PYTHON=OFF"
+              "-DBUILD_PYTHON=OFF"
               # This is actually just to let cmake not build the clients. We
               # build them ourselves, with Nix methods.
               "-DBUILD_CLIENTS_ONLY=ON"
@@ -57,7 +57,7 @@
 
             # Currently, asapo needs git to evaluate the current branch, which
             # doesn't work when you have a tar file as the source.
-            patches = [ ./remove-git-references.patch ];
+            patches = [ ./remove-git-references.patch ./fix-kDefaultIngestMode.patch ];
           };
         in
         {

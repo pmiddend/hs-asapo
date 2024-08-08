@@ -99,7 +99,6 @@ main = do
                             producer
                             header
                             (castPtr stringToSendC)
-                            -- kDefaultIngestMode
                             (kTransferData .|. kStoreInDatabase)
                             stream
                             processAfterSendCallbackPtr
