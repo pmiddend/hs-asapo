@@ -4,7 +4,7 @@ These are bindings for DESY’s [ASAP:O](https://gitlab.desy.de/asapo/asapo), a 
 
 ## Docs
 
-The raw C bindings are located in `lib/Asapo/Raw.hsc` and are hand-written. A high-level interface is located in `lib/Asapo/Consumer.hs` and `lib/asapo/Producer.hs`. You should use the latter in your code.
+The raw C bindings are located in `lib/Asapo/Raw/*` and are hand-written. A high-level interface will be located in `lib/Asapo/Consumer.hs` and `lib/asapo/Producer.hs`. You should use the latter in your code once it's there.
 
 ## Supported
 

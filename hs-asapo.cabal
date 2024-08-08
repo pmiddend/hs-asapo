@@ -7,7 +7,7 @@ bug-reports:    https://github.com/pmiddend/hs-asapo/issues
 author:         Philipp Middendorf
 maintainer:     philipp.middendorf@desy.de
 copyright:      2024 Philipp Middendorf
-license:        GPL-3.0-or-later
+license:        MIT
 license-file:   LICENSE
 build-type:     Simple
 
