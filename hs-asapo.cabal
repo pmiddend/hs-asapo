@@ -23,8 +23,6 @@ library
   exposed-modules: Asapo.Raw.Common
                  , Asapo.Raw.Consumer
                  , Asapo.Raw.Producer
-                 , Asapo.Raw.AsapoOpcode
-                 , Asapo.Raw.AsapoGenericRequestHeader
   build-depends:
       base >=4.7 && <5
     -- for timespec data type (is Storable)

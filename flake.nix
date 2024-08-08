@@ -57,7 +57,8 @@
 
             # Currently, asapo needs git to evaluate the current branch, which
             # doesn't work when you have a tar file as the source.
-            patches = [ ./remove-git-references.patch ./fix-kDefaultIngestMode.patch ];
+            # patches = [ ./remove-git-references.patch ./fix-kDefaultIngestMode.patch ];
+            patches = [ ./remove-git-references.patch ];
           };
         in
         {

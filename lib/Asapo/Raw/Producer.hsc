@@ -2,6 +2,9 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+-- hsc2hs needs the include to find the C structure
+#include <asapo/producer_c.h>
+
 module Asapo.Raw.Producer
   ( AsapoProducerHandle (AsapoProducerHandle),
     AsapoRequestCallbackPayloadHandle (AsapoRequestCallbackPayloadHandle),
@@ -9,6 +12,7 @@ module Asapo.Raw.Producer
     AsapoRequestCallback,
     createRequestCallback,
     kMaxMessageSize,
+    kDefaultIngestMode,
     kMaxVersionSize,
     kNCustomParams,
     AsapoRequestHandlerType,
@@ -16,6 +20,19 @@ module Asapo.Raw.Producer
     kFilesystem,
     AsapoIngestModeFlags,
     kTransferData,
+    AsapoOpcode,
+    kOpcodeUnknownOp,
+    kOpcodeTransferData,
+    kOpcodeTransferDatasetData,
+    kOpcodeStreamInfo,
+    kOpcodeLastStream,
+    kOpcodeGetBufferData,
+    kOpcodeAuthorize,
+    kOpcodeTransferMetaData,
+    kOpcodeDeleteStream,
+    kOpcodeGetMeta,
+    kOpcodeCount,
+    kOpcodePersistStream,
     kTransferMetaDataOnly,
     kStoreInFilesystem,
     kStoreInDatabase,
@@ -52,12 +69,11 @@ module Asapo.Raw.Producer
     asapo_producer_get_requests_queue_volume_mb,
     asapo_producer_set_requests_queue_limits,
     asapo_producer_wait_requests_finished,
+    AsapoGenericRequestHeader(..)
   )
 where
 
-import Asapo.Raw.AsapoGenericRequestHeader
-  ( AsapoGenericRequestHeader,
-  )
+import Data.Functor((<$>))
 import Asapo.Raw.Common
   ( AsapoBool,
     AsapoErrorHandle (AsapoErrorHandle),
@@ -70,9 +86,10 @@ import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
 import Foreign.Ptr (FunPtr, Ptr)
-import Foreign.Storable (Storable)
+import Foreign.Storable (Storable(alignment, peek, peekByteOff, poke, sizeOf))
 import System.IO (IO)
-import Prelude ()
+import Prelude (error)
+import Control.Applicative((<*>))
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoProducerHandle" #-} AsapoProducerHandle = AsapoProducerHandle (Ptr ()) deriving (Storable)
 
@@ -90,6 +107,59 @@ foreign import capi "asapo/producer_c.h value kMaxVersionSize" kMaxVersionSize :
 
 foreign import capi "asapo/producer_c.h value kNCustomParams" kNCustomParams :: CSize
 
+type AsapoOpcode = CInt
+
+foreign import capi "asapo/producer_c.h value kOpcodeUnknownOp" kOpcodeUnknownOp :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeTransferData" kOpcodeTransferData :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeTransferDatasetData" kOpcodeTransferDatasetData :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeStreamInfo" kOpcodeStreamInfo :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeLastStream" kOpcodeLastStream :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeGetBufferData" kOpcodeGetBufferData :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeAuthorize" kOpcodeAuthorize :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeTransferMetaData" kOpcodeTransferMetaData :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeDeleteStream" kOpcodeDeleteStream :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeGetMeta" kOpcodeGetMeta :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodeCount" kOpcodeCount :: AsapoOpcode
+
+foreign import capi "asapo/producer_c.h value kOpcodePersistStream" kOpcodePersistStream :: AsapoOpcode
+
+data AsapoGenericRequestHeader = AsapoGenericRequestHeader
+  { asapoGenericRequestHeaderOpCode :: !AsapoOpcode,
+    asapoGenericRequestHeaderDataId :: !CULong,
+    asapoGenericRequestHeaderDataSize :: !CULong,
+    asapoGenericRequestHeaderMetaSize :: !CULong,
+    asapoGenericRequestHeaderCustomData :: !CULong,
+    asapoGenericRequestHeaderMessage :: !CString,
+    asapoGenericRequestHeaderStream :: !CString,
+    asapoGenericRequestHeaderApiVersion :: !CString
+  }
+
+instance Storable AsapoGenericRequestHeader where
+  sizeOf _ = (# size struct AsapoGenericRequestHeader)
+  alignment _ = (# alignment struct AsapoGenericRequestHeader)
+  peek ptr =
+    AsapoGenericRequestHeader
+      <$> (# peek struct AsapoGenericRequestHeader, op_code) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, data_id) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, data_size) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, meta_size) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, custom_data) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, message) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, stream) ptr
+      <*> (# peek struct AsapoGenericRequestHeader, api_version) ptr
+  poke _ = error "why was AsapoGenericRequestHeader poked? it's supposed to be read-only"
+
+
 type AsapoRequestHandlerType = CInt
 
 foreign import capi "asapo/producer_c.h value kTcp" kTcp :: AsapoRequestHandlerType
@@ -106,7 +176,7 @@ foreign import capi "asapo/producer_c.h value kStoreInFilesystem" kStoreInFilesy
 
 foreign import capi "asapo/producer_c.h value kStoreInDatabase" kStoreInDatabase :: AsapoIngestModeFlags
 
--- foreign import capi "asapo/producer_c.h value kDefaultIngestMode" kDefaultIngestMode :: AsapoIngestModeFlags
+foreign import capi "asapo/producer_c.h value kDefaultIngestMode" kDefaultIngestMode :: AsapoIngestModeFlags
 
 type AsapoMetaIngestOp = CInt
 
