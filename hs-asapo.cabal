@@ -1,7 +1,9 @@
 cabal-version:  3.4
 name:           hs-asapo
 version:        1.0.0
-description:    Haskell bindings for ASAP:O
+synopsis:       Haskell bindings for DESY’s ASAP:O
+category:       System, FFI, Distributed Computing
+description:    Haskell bindings for ASAP:O, a middleware platform for high-performance data analysis. More to come.
 homepage:       https://github.com/pmiddend/hs-asapo
 bug-reports:    https://github.com/pmiddend/hs-asapo/issues
 author:         Philipp Middendorf
@@ -10,6 +12,7 @@ copyright:      2024 Philipp Middendorf
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
+extra-source-files: ChangeLog
 
 source-repository head
   type: git
@@ -26,7 +29,7 @@ library
   build-depends:
       base >=4.7 && <5
     -- for timespec data type (is Storable)
-    , clock
+    , clock >= 0.8.4 && < 0.9
 
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
@@ -54,4 +57,4 @@ executable simple-consumer
       base >=4.7 && <5
     , hs-asapo
     -- for timespec data type (is Storable)
-    , clock
+    , clock >= 0.8.4 && < 0.9,
