@@ -1,4 +1,5 @@
 {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
@@ -12,9 +13,10 @@ module Asapo.Raw.Producer
     AsapoRequestCallback,
     createRequestCallback,
     kMaxMessageSize,
+    kNCustomParams,
     kDefaultIngestMode,
     kMaxVersionSize,
-    kNCustomParams,
+    asapo_free_message_header_handle,
     AsapoRequestHandlerType,
     kTcp,
     kFilesystem,
@@ -81,21 +83,26 @@ import Asapo.Raw.Common
     AsapoStreamInfoHandle (AsapoStreamInfoHandle),
     AsapoStringHandle (AsapoStringHandle),
     ConstCString,
+    asapo_free_handle
   )
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
 import Foreign.Ptr (FunPtr, Ptr)
+import Foreign (with, peekArray)
 import Foreign.Storable (Storable(alignment, peek, peekByteOff, poke, sizeOf))
 import System.IO (IO)
-import Prelude (error)
-import Control.Applicative((<*>))
+import Prelude (error, fromIntegral)
+import Control.Applicative((<*>), pure)
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoProducerHandle" #-} AsapoProducerHandle = AsapoProducerHandle (Ptr ()) deriving (Storable)
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoRequestCallbackPayloadHandle" #-} AsapoRequestCallbackPayloadHandle = AsapoRequestCallbackPayloadHandle (Ptr ()) deriving (Storable)
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoMessageHeaderHandle" #-} AsapoMessageHeaderHandle = AsapoMessageHeaderHandle (Ptr ()) deriving (Storable)
+
+asapo_free_message_header_handle :: AsapoMessageHeaderHandle -> IO ()
+asapo_free_message_header_handle (AsapoMessageHeaderHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 type AsapoRequestCallback = Ptr () -> AsapoRequestCallbackPayloadHandle -> AsapoErrorHandle -> IO ()
 
@@ -138,7 +145,7 @@ data AsapoGenericRequestHeader = AsapoGenericRequestHeader
     asapoGenericRequestHeaderDataId :: !CULong,
     asapoGenericRequestHeaderDataSize :: !CULong,
     asapoGenericRequestHeaderMetaSize :: !CULong,
-    asapoGenericRequestHeaderCustomData :: !CULong,
+    asapoGenericRequestHeaderCustomData :: ![CULong],
     asapoGenericRequestHeaderMessage :: !CString,
     asapoGenericRequestHeaderStream :: !CString,
     asapoGenericRequestHeaderApiVersion :: !CString
@@ -147,13 +154,15 @@ data AsapoGenericRequestHeader = AsapoGenericRequestHeader
 instance Storable AsapoGenericRequestHeader where
   sizeOf _ = (# size struct AsapoGenericRequestHeader)
   alignment _ = (# alignment struct AsapoGenericRequestHeader)
-  peek ptr =
+  peek ptr = do 
+    customDataArray <- (# peek struct AsapoGenericRequestHeader, custom_data) ptr
+    customData <- peekArray (fromIntegral kNCustomParams) customDataArray
     AsapoGenericRequestHeader
       <$> (# peek struct AsapoGenericRequestHeader, op_code) ptr
       <*> (# peek struct AsapoGenericRequestHeader, data_id) ptr
       <*> (# peek struct AsapoGenericRequestHeader, data_size) ptr
       <*> (# peek struct AsapoGenericRequestHeader, meta_size) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, custom_data) ptr
+      <*> pure customData
       <*> (# peek struct AsapoGenericRequestHeader, message) ptr
       <*> (# peek struct AsapoGenericRequestHeader, stream) ptr
       <*> (# peek struct AsapoGenericRequestHeader, api_version) ptr
@@ -280,9 +289,9 @@ foreign import capi "asapo/producer_c.h asapo_create_message_header"
     -- data size
     CULong ->
     -- file name
-    CString ->
+    ConstCString ->
     -- user metadata
-    CString ->
+    ConstCString ->
     -- dataset substream
     CULong ->
     -- dataset size
@@ -300,7 +309,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_send"
     -- ingest mode
     CULong ->
     -- stream
-    CString ->
+    ConstCString ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
@@ -314,7 +323,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_file"
     -- ingest mode
     CULong ->
     -- stream
-    CString ->
+    ConstCString ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt

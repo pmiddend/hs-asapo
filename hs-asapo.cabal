@@ -26,10 +26,19 @@ library
   exposed-modules: Asapo.Raw.Common
                  , Asapo.Raw.Consumer
                  , Asapo.Raw.Producer
+                 , Asapo.Producer
+                 , Asapo.Common
   build-depends:
       base >=4.7 && <5
+    , text
     -- for timespec data type (is Storable)
     , clock >= 0.8.4 && < 0.9
+    -- for higher-level UTCTime/LocalTime
+    , time
+    -- for RFC3339
+    , timerep
+    -- for the HL interface to send
+    , bytestring
 
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
@@ -37,7 +46,7 @@ library
 
 executable simple-producer
   import: warnings
-  main-is: Producer.hs
+  main-is: SimpleProducer.hs
   
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   hs-source-dirs:
@@ -45,16 +54,19 @@ executable simple-producer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
+    -- also for the high-level interface
+    , text
+    , bytestring
     
-executable simple-consumer
-  import: warnings
-  main-is: Consumer.hs
+-- executable simple-consumer
+--   import: warnings
+--   main-is: Consumer.hs
   
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  hs-source-dirs:
-      app
-  build-depends:
-      base >=4.7 && <5
-    , hs-asapo
-    -- for timespec data type (is Storable)
-    , clock >= 0.8.4 && < 0.9,
+--   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+--   hs-source-dirs:
+--       app
+--   build-depends:
+--       base >=4.7 && <5
+--     , hs-asapo
+--     -- for timespec data type (is Storable)
+--     , clock >= 0.8.4 && < 0.9,

@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -7,14 +8,20 @@ module Asapo.Raw.Common
     AsapoSourceCredentialsHandle (AsapoSourceCredentialsHandle),
     AsapoMessageDataHandle (AsapoMessageDataHandle),
     asapo_is_error,
+    asapo_string_c_str,
     asapo_message_data_get_as_chars,
+    asapo_new_string_handle,
+    asapo_free_string_handle,
+    asapo_free_stream_info_handle,
     asapo_error_explain,
     asapo_string_size,
     AsapoErrorHandle (AsapoErrorHandle),
     AsapoStreamInfosHandle (AsapoStreamInfosHandle),
     AsapoStringHandle (AsapoStringHandle),
     ConstCString,
+    asapo_free_source_credentials,
     asapo_new_error_handle,
+    asapo_free_error_handle,
     asapo_string_from_c_str,
     asapo_new_handle,
     asapo_free_handle,
@@ -34,6 +41,7 @@ module Asapo.Raw.Common
 where
 
 import Data.Functor ((<$>))
+import Foreign (with)
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CInt (CInt), CSize (CSize), CULong (CULong))
@@ -54,7 +62,16 @@ newtype {-# CTYPE "asapo/common/common_c.h" "AsapoErrorHandle" #-} AsapoErrorHan
 
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStringHandle" #-} AsapoStringHandle = AsapoStringHandle (Ptr ()) deriving (Storable)
 
+asapo_new_string_handle :: IO AsapoStringHandle
+asapo_new_string_handle = AsapoStringHandle <$> asapo_new_handle
+
+asapo_free_string_handle :: AsapoStringHandle -> IO ()
+asapo_free_string_handle (AsapoStringHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfoHandle" #-} AsapoStreamInfoHandle = AsapoStreamInfoHandle (Ptr ()) deriving (Storable)
+
+asapo_free_stream_info_handle :: AsapoStreamInfoHandle -> IO ()
+asapo_free_stream_info_handle (AsapoStreamInfoHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfosHandle" #-} AsapoStreamInfosHandle = AsapoStreamInfosHandle (Ptr ()) deriving (Storable)
 
@@ -76,11 +93,16 @@ foreign import capi "asapo/common/common_c.h asapo_new_handle" asapo_new_handle 
 asapo_new_error_handle :: IO AsapoErrorHandle
 asapo_new_error_handle = AsapoErrorHandle <$> asapo_new_handle
 
+asapo_free_error_handle :: AsapoErrorHandle -> IO ()
+asapo_free_error_handle (AsapoErrorHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+
 foreign import capi "asapo/common/common_c.h asapo_error_explain" asapo_error_explain :: AsapoErrorHandle -> CString -> CSize -> IO ()
 
 foreign import capi "asapo/common/common_c.h asapo_is_error" asapo_is_error :: AsapoErrorHandle -> IO AsapoBool
 
 foreign import capi "asapo/common/common_c.h asapo_string_from_c_str" asapo_string_from_c_str :: ConstCString -> IO AsapoStringHandle
+
+foreign import capi "asapo/common/common_c.h asapo_string_c_str" asapo_string_c_str :: AsapoStringHandle -> IO ConstCString
 
 foreign import capi "asapo/common/common_c.h asapo_string_size" asapo_string_size :: AsapoStringHandle -> IO CSize
 
@@ -104,6 +126,24 @@ foreign import capi "asapo/common/common_c.h asapo_stream_info_get_timestamp_cre
 
 foreign import capi "asapo/common/common_c.h asapo_stream_info_get_timestamp_last_entry" asapo_stream_info_get_timestamp_last_entry :: AsapoStreamInfoHandle -> Ptr TimeSpec -> IO ()
 
-foreign import capi "asapo/common/common_c.h asapo_create_source_credentials" asapo_create_source_credentials :: CInt -> CString -> CString -> CString -> CString -> CString -> CString -> IO AsapoSourceCredentialsHandle
+foreign import capi "asapo/common/common_c.h asapo_create_source_credentials"
+  asapo_create_source_credentials ::
+    AsapoSourceType ->
+    -- instance ID
+    CString ->
+    -- pipeline step
+    CString ->
+    -- beamtime
+    CString ->
+    -- beamline
+    CString ->
+    -- data source
+    CString ->
+    -- token
+    CString ->
+    IO AsapoSourceCredentialsHandle
+
+asapo_free_source_credentials :: AsapoSourceCredentialsHandle -> IO ()
+asapo_free_source_credentials (AsapoSourceCredentialsHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 foreign import capi "asapo/common/common_c.h asapo_message_data_get_as_chars" asapo_message_data_get_as_chars :: AsapoMessageDataHandle -> IO ConstCString

@@ -76,6 +76,7 @@
               buildInputs = with pkgs; [
                 haskellPackages.haskell-language-server
                 cabal-install
+                gdb
                 ghcid
                 haskellPackages.hlint
                 haskellPackages.apply-refact
