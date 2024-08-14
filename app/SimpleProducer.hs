@@ -18,6 +18,7 @@ import Data.Maybe (Maybe (Just, Nothing))
 import Data.Ord (Ord ((>)))
 import Data.Semigroup (Semigroup ((<>)))
 import Data.String (String)
+import Data.Text (pack)
 import Data.Text.IO as TIO
 import Foreign.C.String (newCString, withCString)
 import Foreign.Marshal.Utils (with)
@@ -49,8 +50,8 @@ main = do
     \producer -> do
       TIO.putStrLn "connected, sending data"
       let responseHandler :: RequestResponse -> IO ()
-          responseHandler _ = TIO.putStrLn "in response handler"
-      sendResult <- send producer (MessageId 1) (FileName "raw/1.txt") (Metadata "{}") (DatasetSubstream 1) (DatasetSize 1) NoAutoId (BS8.pack "hello") DataAndMetadata Database (StreamName "hl") responseHandler
+          responseHandler requestResponse = TIO.putStrLn $ "in response handler, payload " <> responsePayload requestResponse <> ", error " <> pack (show (responseError requestResponse))
+      sendResult <- send producer (MessageId 1) (FileName "raw/1.txt") (Metadata "{}") (DatasetSubstream 1) (DatasetSize 1) NoAutoId (BS8.pack "hello") DataAndMetadata FilesystemAndDatabase (StreamName "hl") responseHandler
       case sendResult of
         Left e -> TIO.putStrLn "error sending"
         Right _ -> TIO.putStrLn "send complete"

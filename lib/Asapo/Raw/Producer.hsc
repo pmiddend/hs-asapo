@@ -76,6 +76,7 @@ module Asapo.Raw.Producer
 where
 
 import Data.Functor((<$>))
+import Data.Word(Word64)
 import Asapo.Raw.Common
   ( AsapoBool,
     AsapoErrorHandle (AsapoErrorHandle),
@@ -88,7 +89,7 @@ import Asapo.Raw.Common
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
-import Foreign.Ptr (FunPtr, Ptr)
+import Foreign.Ptr (FunPtr, Ptr, plusPtr)
 import Foreign (with, peekArray)
 import Foreign.Storable (Storable(alignment, peek, peekByteOff, poke, sizeOf))
 import System.IO (IO)
@@ -142,10 +143,10 @@ foreign import capi "asapo/producer_c.h value kOpcodePersistStream" kOpcodePersi
 
 data AsapoGenericRequestHeader = AsapoGenericRequestHeader
   { asapoGenericRequestHeaderOpCode :: !AsapoOpcode,
-    asapoGenericRequestHeaderDataId :: !CULong,
-    asapoGenericRequestHeaderDataSize :: !CULong,
-    asapoGenericRequestHeaderMetaSize :: !CULong,
-    asapoGenericRequestHeaderCustomData :: ![CULong],
+    asapoGenericRequestHeaderDataId :: !Word64,
+    asapoGenericRequestHeaderDataSize :: !Word64,
+    asapoGenericRequestHeaderMetaSize :: !Word64,
+    asapoGenericRequestHeaderCustomData :: ![Word64],
     asapoGenericRequestHeaderMessage :: !CString,
     asapoGenericRequestHeaderStream :: !CString,
     asapoGenericRequestHeaderApiVersion :: !CString
@@ -154,18 +155,24 @@ data AsapoGenericRequestHeader = AsapoGenericRequestHeader
 instance Storable AsapoGenericRequestHeader where
   sizeOf _ = (# size struct AsapoGenericRequestHeader)
   alignment _ = (# alignment struct AsapoGenericRequestHeader)
-  peek ptr = do 
-    customDataArray <- (# peek struct AsapoGenericRequestHeader, custom_data) ptr
-    customData <- peekArray (fromIntegral kNCustomParams) customDataArray
+  peek ptr = do
+    customData <- peekArray (fromIntegral kNCustomParams) ((# ptr struct AsapoGenericRequestHeader, custom_data) ptr)
+    opCode <- (# peek struct AsapoGenericRequestHeader, op_code) ptr
+    dataId <- (# peek struct AsapoGenericRequestHeader, data_id) ptr
+    dataSize <- (# peek struct AsapoGenericRequestHeader, data_size) ptr
+    metaSize <- (# peek struct AsapoGenericRequestHeader, meta_size) ptr
+    let message' = (# ptr struct AsapoGenericRequestHeader, message) ptr
+    let stream' = (# ptr struct AsapoGenericRequestHeader, stream) ptr
+    let apiVersion' = (# ptr struct AsapoGenericRequestHeader, api_version) ptr
     AsapoGenericRequestHeader
-      <$> (# peek struct AsapoGenericRequestHeader, op_code) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, data_id) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, data_size) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, meta_size) ptr
+      <$> pure opCode
+      <*> pure dataId
+      <*> pure dataSize
+      <*> pure metaSize
       <*> pure customData
-      <*> (# peek struct AsapoGenericRequestHeader, message) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, stream) ptr
-      <*> (# peek struct AsapoGenericRequestHeader, api_version) ptr
+      <*> pure message'
+      <*> pure stream'
+      <*> pure apiVersion'
   poke _ = error "why was AsapoGenericRequestHeader poked? it's supposed to be read-only"
 
 
@@ -216,7 +223,7 @@ foreign import capi "asapo/producer_c.h asapo_create_producer"
     AsapoRequestHandlerType ->
     AsapoSourceCredentialsHandle ->
     -- timeout_ms
-    CULong ->
+    Word64 ->
     Ptr AsapoErrorHandle ->
     IO AsapoProducerHandle
 
@@ -238,7 +245,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_get_stream_info"
     -- stream
     ConstCString ->
     -- timeout ms
-    CULong ->
+    Word64 ->
     Ptr AsapoErrorHandle ->
     IO AsapoStreamInfoHandle
 
@@ -248,7 +255,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_get_stream_meta"
     -- stream
     ConstCString ->
     -- timeout_ms
-    CULong ->
+    Word64 ->
     Ptr AsapoErrorHandle ->
     IO AsapoStringHandle
 
@@ -256,7 +263,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_get_beamtime_meta"
   asapo_producer_get_beamtime_meta ::
     AsapoProducerHandle ->
     -- timeout_ms
-    CULong ->
+    Word64 ->
     Ptr AsapoErrorHandle ->
     IO AsapoStringHandle
 
@@ -266,7 +273,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_delete_stream"
     -- stream
     ConstCString ->
     -- timeout_ms
-    CULong ->
+    Word64 ->
     -- delete meta
     AsapoBool ->
     -- error_on_not_exist
@@ -278,24 +285,24 @@ foreign import capi "asapo/producer_c.h asapo_producer_get_last_stream"
   asapo_producer_get_last_stream ::
     AsapoProducerHandle ->
     -- timeout ms
-    CULong ->
+    Word64 ->
     Ptr AsapoErrorHandle ->
     IO AsapoStreamInfoHandle
 
 foreign import capi "asapo/producer_c.h asapo_create_message_header"
   asapo_create_message_header ::
     -- message ID
-    CULong ->
+    Word64 ->
     -- data size
-    CULong ->
+    Word64 ->
     -- file name
     ConstCString ->
     -- user metadata
     ConstCString ->
     -- dataset substream
-    CULong ->
+    Word64 ->
     -- dataset size
-    CULong ->
+    Word64 ->
     -- auto id
     AsapoBool ->
     IO AsapoMessageHeaderHandle
@@ -307,7 +314,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_send"
     -- data
     Ptr () ->
     -- ingest mode
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     FunPtr AsapoRequestCallback ->
@@ -321,7 +328,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_file"
     -- file name
     ConstCString ->
     -- ingest mode
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     FunPtr AsapoRequestCallback ->
@@ -334,7 +341,7 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_stream_finished_flag
     -- stream
     ConstCString ->
     -- last ID
-    CULong ->
+    Word64 ->
     -- next stream
     ConstCString ->
     FunPtr AsapoRequestCallback ->
@@ -390,25 +397,25 @@ foreign import capi "asapo/producer_c.h asapo_producer_set_credentials"
     IO CInt
 
 foreign import capi "asapo/producer_c.h asapo_producer_get_requests_queue_size"
-  asapo_producer_get_requests_queue_size :: AsapoProducerHandle -> IO CULong
+  asapo_producer_get_requests_queue_size :: AsapoProducerHandle -> IO Word64
 
 foreign import capi "asapo/producer_c.h asapo_producer_get_requests_queue_volume_mb"
-  asapo_producer_get_requests_queue_volume_mb :: AsapoProducerHandle -> IO CULong
+  asapo_producer_get_requests_queue_volume_mb :: AsapoProducerHandle -> IO Word64
 
 foreign import capi "asapo/producer_c.h asapo_producer_set_requests_queue_limits"
   asapo_producer_set_requests_queue_limits ::
     AsapoProducerHandle ->
     -- size
-    CULong ->
+    Word64 ->
     -- volume
-    CULong ->
+    Word64 ->
     IO ()
 
 foreign import capi "asapo/producer_c.h asapo_producer_wait_requests_finished"
   asapo_producer_wait_requests_finished ::
     AsapoProducerHandle ->
     -- timeout ms
-    CULong ->
+    Word64 ->
     -- error
     Ptr AsapoErrorHandle ->
     IO CInt

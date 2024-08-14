@@ -129,11 +129,11 @@ import Data.Time (NominalDiffTime)
 import Data.Time.Clock (UTCTime, addUTCTime)
 import Data.Time.LocalTime (zonedTimeToUTC)
 import qualified Data.Time.RFC3339 as RFC3339
+import Data.Word (Word64)
 import Foreign (Storable (peek), alloca, castPtr, free, mallocArray)
 import Foreign.C (CChar)
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr, unConstPtr))
 import Foreign.C.String (CString, peekCString, withCString)
-import Foreign.C.Types (CULong)
 import Foreign.Marshal (with)
 import Foreign.Ptr (Ptr)
 import System.Clock (TimeSpec, toNanoSecs)
@@ -153,7 +153,7 @@ newtype Producer = Producer AsapoProducerHandle
 
 newtype StreamName = StreamName Text
 
-newtype Error = Error Text
+newtype Error = Error Text deriving (Show)
 
 newtype MessageId = MessageId Int deriving (Show)
 
@@ -408,13 +408,13 @@ data TransferFlag = DataAndMetadata | MetadataOnly
 
 data StorageFlag = Filesystem | Database | FilesystemAndDatabase
 
-convertSendFlags :: TransferFlag -> StorageFlag -> CULong
+convertSendFlags :: TransferFlag -> StorageFlag -> Word64
 convertSendFlags tf sf = convertTransferFlag tf .|. convertStorageFlag sf
   where
-    convertTransferFlag :: TransferFlag -> CULong
+    convertTransferFlag :: TransferFlag -> Word64
     convertTransferFlag DataAndMetadata = fromIntegral kTransferData
     convertTransferFlag MetadataOnly = fromIntegral kTransferMetaDataOnly
-    convertStorageFlag :: StorageFlag -> CULong
+    convertStorageFlag :: StorageFlag -> Word64
     convertStorageFlag Filesystem = fromIntegral kStoreInFilesystem
     convertStorageFlag Database = fromIntegral kStoreInDatabase
     convertStorageFlag FilesystemAndDatabase = fromIntegral kStoreInDatabase .|. fromIntegral kStoreInFilesystem
