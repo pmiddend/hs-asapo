@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,6 +14,8 @@ module Asapo.Raw.Consumer
     AsapoConsumerErrorType,
     asapo_stream_infos_get_size,
     asapo_new_message_meta_handle,
+    asapo_free_message_metas_handle,
+    asapo_free_id_list_handle,
     kNoData,
     kEndOfStream,
     kStreamFinished,
@@ -93,12 +96,15 @@ import Asapo.Raw.Common
     AsapoStreamInfosHandle (AsapoStreamInfosHandle),
     AsapoStringHandle (AsapoStringHandle),
     ConstCString,
+    asapo_free_handle,
     asapo_new_handle,
   )
 import Data.Functor ((<$>))
+import Data.Int (Int64)
+import Data.Word (Word64)
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
-import Foreign.C.String (CString)
-import Foreign.C.Types (CInt (CInt), CLong (CLong), CSize (CSize), CULong (CULong))
+import Foreign.C.Types (CInt (CInt), CLong (CLong), CSize (CSize))
+import Foreign.Marshal (with)
 import Foreign.Ptr (Ptr)
 import Foreign.Storable (Storable)
 import System.Clock (TimeSpec)
@@ -113,10 +119,16 @@ newtype {-# CTYPE "asapo/consumer_c.h" "AsapoMessageMetaHandle" #-} AsapoMessage
 
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoMessageMetasHandle" #-} AsapoMessageMetasHandle = AsapoMessageMetasHandle (Ptr ()) deriving (Storable)
 
+asapo_free_message_metas_handle :: AsapoMessageMetasHandle -> IO ()
+asapo_free_message_metas_handle (AsapoMessageMetasHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+
 asapo_new_message_meta_handle :: IO AsapoMessageMetaHandle
 asapo_new_message_meta_handle = AsapoMessageMetaHandle <$> asapo_new_handle
 
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoIdListHandle" #-} AsapoIdListHandle = AsapoIdListHandle (Ptr ()) deriving (Storable)
+
+asapo_free_id_list_handle :: AsapoIdListHandle -> IO ()
+asapo_free_id_list_handle (AsapoIdListHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoDataSetHandle" #-} AsapoDataSetHandle = AsapoDataSetHandle (Ptr ()) deriving (Storable)
 
@@ -169,9 +181,9 @@ foreign import capi "asapo/consumer_c.h asapo_error_get_type" asapo_error_get_ty
 foreign import capi "asapo/consumer_c.h asapo_create_consumer"
   asapo_create_consumer ::
     -- server_name
-    CString ->
+    ConstCString ->
     -- source_path
-    CString ->
+    ConstCString ->
     -- has filesystem
     AsapoBool ->
     AsapoSourceCredentialsHandle ->
@@ -180,7 +192,7 @@ foreign import capi "asapo/consumer_c.h asapo_create_consumer"
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_generate_new_group_id" asapo_consumer_generate_new_group_id :: AsapoConsumerHandle -> Ptr AsapoErrorHandle -> IO AsapoStringHandle
 
-foreign import capi "asapo/consumer_c.h asapo_consumer_set_timeout" asapo_consumer_set_timeout :: AsapoConsumerHandle -> CULong -> IO ()
+foreign import capi "asapo/consumer_c.h asapo_consumer_set_timeout" asapo_consumer_set_timeout :: AsapoConsumerHandle -> Word64 -> IO ()
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_reset_last_read_marker"
   asapo_consumer_reset_last_read_marker ::
@@ -198,7 +210,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_set_last_read_marker"
     -- group_id
     AsapoStringHandle ->
     -- value
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -210,7 +222,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_acknowledge"
     -- group_id
     AsapoStringHandle ->
     -- id
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -222,9 +234,9 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_negative_acknowledge"
     -- group_id
     AsapoStringHandle ->
     -- id
-    CULong ->
+    Word64 ->
     -- delay_ms
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -236,9 +248,9 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_unacknowledged_messag
     -- group_id
     AsapoStringHandle ->
     -- from id
-    CULong ->
+    Word64 ->
     -- to id
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -246,7 +258,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_unacknowledged_messag
 
 foreign import capi "asapo/consumer_c.h asapo_id_list_get_size" asapo_id_list_get_size :: AsapoIdListHandle -> IO CSize
 
-foreign import capi "asapo/consumer_c.h asapo_id_list_get_item" asapo_id_list_get_item :: AsapoIdListHandle -> CSize -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_id_list_get_item" asapo_id_list_get_item :: AsapoIdListHandle -> CSize -> IO Word64
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_last_acknowledged_message"
   asapo_consumer_get_last_acknowledged_message ::
@@ -268,7 +280,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_current_connection_type" 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_stream_list"
   asapo_consumer_get_stream_list ::
     AsapoConsumerHandle ->
-    -- from
+    -- stream
     ConstCString ->
     AsapoStreamFilter ->
     Ptr AsapoErrorHandle ->
@@ -300,7 +312,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_current_size"
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
-    IO CLong
+    IO Int64
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_current_dataset_count"
   asapo_consumer_get_current_dataset_count ::
@@ -310,7 +322,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_current_dataset_count
     -- include_incomplete
     AsapoBool ->
     Ptr AsapoErrorHandle ->
-    IO CLong
+    IO Int64
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_beamtime_meta" asapo_consumer_get_beamtime_meta :: AsapoConsumerHandle -> Ptr AsapoErrorHandle -> IO AsapoStringHandle
 
@@ -322,7 +334,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_next_dataset"
     -- group_id
     AsapoStringHandle ->
     -- min_size
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -332,7 +344,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_last_dataset"
   asapo_consumer_get_last_dataset ::
     AsapoConsumerHandle ->
     -- min_size
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -344,7 +356,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_last_dataset_ingroup"
     -- group_id
     AsapoStringHandle ->
     -- min_size
-    CULong ->
+    Word64 ->
     -- stream
     ConstCString ->
     Ptr AsapoErrorHandle ->
@@ -354,7 +366,7 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_by_id"
   asapo_consumer_get_by_id ::
     AsapoConsumerHandle ->
     -- id
-    CULong ->
+    Word64 ->
     Ptr AsapoMessageMetaHandle ->
     Ptr AsapoMessageDataHandle ->
     -- stream
@@ -412,9 +424,9 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_set_resend_nacs"
     -- resend
     AsapoBool ->
     -- delay_ms
-    CULong ->
+    Word64 ->
     -- resend_attempts
-    CULong ->
+    Word64 ->
     IO ()
 
 foreign import capi "asapo/consumer_c.h asapo_message_data_get_as_chars" asapo_message_data_get_as_chars :: AsapoMessageDataHandle -> IO ConstCString
@@ -423,21 +435,21 @@ foreign import capi "asapo/consumer_c.h asapo_message_meta_get_name" asapo_messa
 
 foreign import capi "asapo/consumer_c.h asapo_message_meta_get_timestamp" asapo_message_meta_get_timestamp :: AsapoMessageMetaHandle -> Ptr TimeSpec -> IO ()
 
-foreign import capi "asapo/consumer_c.h asapo_message_meta_get_size" asapo_message_meta_get_size :: AsapoMessageMetaHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_message_meta_get_size" asapo_message_meta_get_size :: AsapoMessageMetaHandle -> IO Word64
 
-foreign import capi "asapo/consumer_c.h asapo_message_meta_get_id" asapo_message_meta_get_id :: AsapoMessageMetaHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_message_meta_get_id" asapo_message_meta_get_id :: AsapoMessageMetaHandle -> IO Word64
 
 foreign import capi "asapo/consumer_c.h asapo_message_meta_get_source" asapo_message_meta_get_source :: AsapoMessageMetaHandle -> IO ConstCString
 
 foreign import capi "asapo/consumer_c.h asapo_message_meta_get_metadata" asapo_message_meta_get_metadata :: AsapoMessageMetaHandle -> IO ConstCString
 
-foreign import capi "asapo/consumer_c.h asapo_message_meta_get_buf_id" asapo_message_meta_get_buf_id :: AsapoMessageMetaHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_message_meta_get_buf_id" asapo_message_meta_get_buf_id :: AsapoMessageMetaHandle -> IO Word64
 
-foreign import capi "asapo/consumer_c.h asapo_message_meta_get_dataset_substream" asapo_message_meta_get_dataset_substream :: AsapoMessageMetaHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_message_meta_get_dataset_substream" asapo_message_meta_get_dataset_substream :: AsapoMessageMetaHandle -> IO Word64
 
-foreign import capi "asapo/consumer_c.h asapo_dataset_get_id" asapo_dataset_get_id :: AsapoDataSetHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_dataset_get_id" asapo_dataset_get_id :: AsapoDataSetHandle -> IO Word64
 
-foreign import capi "asapo/consumer_c.h asapo_dataset_get_expected_size" asapo_dataset_get_expected_size :: AsapoDataSetHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_dataset_get_expected_size" asapo_dataset_get_expected_size :: AsapoDataSetHandle -> IO Word64
 
 foreign import capi "asapo/consumer_c.h asapo_dataset_get_size" asapo_dataset_get_size :: AsapoDataSetHandle -> IO CSize
 
@@ -449,12 +461,12 @@ foreign import capi "asapo/consumer_c.h asapo_message_metas_get_item" asapo_mess
 
 foreign import capi "asapo/consumer_c.h asapo_error_get_payload_from_partial_error" asapo_error_get_payload_from_partial_error :: AsapoErrorHandle -> IO AsapoPartialErrorDataHandle
 
-foreign import capi "asapo/consumer_c.h asapo_partial_error_get_id" asapo_partial_error_get_id :: AsapoPartialErrorDataHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_partial_error_get_id" asapo_partial_error_get_id :: AsapoPartialErrorDataHandle -> IO Word64
 
-foreign import capi "asapo/consumer_c.h asapo_partial_error_get_expected_size" asapo_partial_error_get_expected_size :: AsapoPartialErrorDataHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_partial_error_get_expected_size" asapo_partial_error_get_expected_size :: AsapoPartialErrorDataHandle -> IO Word64
 
 foreign import capi "asapo/consumer_c.h asapo_error_get_payload_from_consumer_error" asapo_error_get_payload_from_consumer_error :: AsapoErrorHandle -> IO AsapoConsumerErrorDataHandle
 
-foreign import capi "asapo/consumer_c.h asapo_consumer_error_get_id" asapo_consumer_error_get_id :: AsapoConsumerErrorDataHandle -> IO CULong
+foreign import capi "asapo/consumer_c.h asapo_consumer_error_get_id" asapo_consumer_error_get_id :: AsapoConsumerErrorDataHandle -> IO Word64
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_error_get_next_stream" asapo_consumer_error_get_next_stream :: AsapoConsumerErrorDataHandle -> IO ConstCString

@@ -10,9 +10,12 @@ module Asapo.Raw.Common
     asapo_is_error,
     asapo_string_c_str,
     asapo_message_data_get_as_chars,
+    p_asapo_free_handle,
+    asapo_free_stream_infos_handle,
     asapo_new_string_handle,
     asapo_free_string_handle,
     asapo_free_stream_info_handle,
+    asapo_free_message_data_handle,
     asapo_error_explain,
     asapo_string_size,
     AsapoErrorHandle (AsapoErrorHandle),
@@ -41,7 +44,7 @@ module Asapo.Raw.Common
 where
 
 import Data.Functor ((<$>))
-import Foreign (with)
+import Foreign (FunPtr, with)
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CInt (CInt), CSize (CSize), CULong (CULong))
@@ -68,10 +71,15 @@ asapo_new_string_handle = AsapoStringHandle <$> asapo_new_handle
 asapo_free_string_handle :: AsapoStringHandle -> IO ()
 asapo_free_string_handle (AsapoStringHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
+foreign import capi "asapo/common/common_c.h &asapo_free_handle__" p_asapo_free_handle :: FunPtr (Ptr () -> IO ())
+
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfoHandle" #-} AsapoStreamInfoHandle = AsapoStreamInfoHandle (Ptr ()) deriving (Storable)
 
 asapo_free_stream_info_handle :: AsapoStreamInfoHandle -> IO ()
 asapo_free_stream_info_handle (AsapoStreamInfoHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+
+asapo_free_stream_infos_handle :: AsapoStreamInfosHandle -> IO ()
+asapo_free_stream_infos_handle (AsapoStreamInfosHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfosHandle" #-} AsapoStreamInfosHandle = AsapoStreamInfosHandle (Ptr ()) deriving (Storable)
 
@@ -79,6 +87,9 @@ newtype {-# CTYPE "asapo/consumer_c.h" "AsapoMessageDataHandle" #-} AsapoMessage
 
 asapo_new_message_data_handle :: IO AsapoMessageDataHandle
 asapo_new_message_data_handle = AsapoMessageDataHandle <$> asapo_new_handle
+
+asapo_free_message_data_handle :: AsapoMessageDataHandle -> IO ()
+asapo_free_message_data_handle (AsapoMessageDataHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 type AsapoSourceType = CInt
 

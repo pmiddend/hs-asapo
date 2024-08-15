@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Asapo.Producer
@@ -9,20 +8,19 @@ module Asapo.Producer
     getRequestsQueueVolumeMb,
     setRequestsQueueLimits,
     RequestHandlerType (..),
+    Error (..),
+    checkError,
+    checkErrorWithGivenHandle,
     withProducer,
     Metadata (..),
     enableLocalLog,
-    Milliseconds (..),
     LogLevel (..),
-    MessageId (..),
     FileName (..),
     DatasetSubstream (..),
     DatasetSize (..),
-    StreamName (..),
     waitRequestsFinished,
     getVersionInfo,
     VersionInfo (..),
-    StreamInfo (..),
     getStreamInfo,
     getStreamMeta,
     getBeamtimeMeta,
@@ -44,12 +42,11 @@ module Asapo.Producer
     setLogLevel,
     enableRemoteLog,
     setCredentials,
-    Error (..),
   )
 where
 
-import Asapo.Common (Beamline (Beamline), Beamtime (Beamtime), DataSource (DataSource), InstanceId (InstanceId), PipelineStep (PipelineStep), SourceCredentials (SourceCredentials, beamline, beamtime, dataSource, instanceId, pipelineStep, sourceType, token), SourceType (ProcessedSource, RawSource), Token (Token))
-import Asapo.Raw.Common (AsapoErrorHandle, AsapoSourceCredentialsHandle, AsapoStreamInfoHandle, AsapoStringHandle, ConstCString, asapo_create_source_credentials, asapo_error_explain, asapo_free_error_handle, asapo_free_source_credentials, asapo_free_stream_info_handle, asapo_free_string_handle, asapo_is_error, asapo_new_error_handle, asapo_new_string_handle, asapo_stream_info_get_finished, asapo_stream_info_get_last_id, asapo_stream_info_get_name, asapo_stream_info_get_next_stream, asapo_stream_info_get_timestamp_created, asapo_stream_info_get_timestamp_last_entry, asapo_string_c_str, kProcessed, kRaw)
+import Asapo.Common (MessageId (MessageId), SourceCredentials, StreamInfo, StreamName (StreamName), nominalDiffToMillis, peekCStringText, retrieveStreamInfoFromC, stringHandleToText, stringHandleToTextUnsafe, withCStringNToText, withConstText, withCredentials, withPtr, withText)
+import Asapo.Raw.Common (AsapoErrorHandle, AsapoStreamInfoHandle, AsapoStringHandle, asapo_error_explain, asapo_free_error_handle, asapo_free_stream_info_handle, asapo_free_string_handle, asapo_is_error, asapo_new_error_handle, asapo_new_string_handle)
 import Asapo.Raw.Producer
   ( AsapoGenericRequestHeader (AsapoGenericRequestHeader),
     AsapoLogLevel,
@@ -110,7 +107,6 @@ import Asapo.Raw.Producer
   )
 import Control.Applicative (Applicative (pure))
 import Control.Exception (bracket)
-import Control.Monad (Monad ((>>=)))
 import Data.Bits ((.|.))
 import Data.Bool (Bool)
 import qualified Data.ByteString as BS
@@ -118,103 +114,29 @@ import Data.ByteString.Unsafe (unsafeUseAsCString)
 import Data.Either (Either (Left, Right))
 import Data.Eq (Eq ((==)))
 import Data.Foldable (Foldable (elem))
-import Data.Function (($), (.))
 import Data.Functor ((<$>))
 import Data.Int (Int)
-import Data.Maybe (Maybe (Just, Nothing), fromJust)
+import Data.Maybe (Maybe (Just, Nothing))
 import Data.Ord ((>))
-import Data.String (String)
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text)
 import Data.Time (NominalDiffTime)
-import Data.Time.Clock (UTCTime, addUTCTime)
-import Data.Time.LocalTime (zonedTimeToUTC)
-import qualified Data.Time.RFC3339 as RFC3339
 import Data.Word (Word64)
-import Foreign (Storable (peek), alloca, castPtr, free, mallocArray)
-import Foreign.C (CChar)
-import Foreign.C.ConstPtr (ConstPtr (ConstPtr, unConstPtr))
-import Foreign.C.String (CString, peekCString, withCString)
-import Foreign.Marshal (with)
+import Foreign (Storable (peek), alloca, castPtr)
+import Foreign.C.ConstPtr (ConstPtr (unConstPtr))
 import Foreign.Ptr (Ptr)
-import System.Clock (TimeSpec, toNanoSecs)
 import System.IO (IO)
 import Text.Show (Show)
-import Prelude (Fractional ((/)), Num (fromInteger), fromIntegral)
+import Prelude (fromIntegral)
+
+newtype Error = Error Text deriving (Show)
 
 newtype Endpoint = Endpoint Text
 
 newtype ProcessingThreads = ProcessingThreads Int
 
-newtype Milliseconds = Milliseconds Int
-
 data RequestHandlerType = TcpHandler | FilesystemHandler
 
 newtype Producer = Producer AsapoProducerHandle
-
-newtype StreamName = StreamName Text
-
-newtype Error = Error Text deriving (Show)
-
-newtype MessageId = MessageId Int deriving (Show)
-
--- peekConstCString :: ConstPtr CChar -> IO String
--- peekConstCString = peekCString . unConstPtr
-
-peekCStringText :: CString -> IO Text
-peekCStringText = (pack <$>) . peekCString
-
-peekConstCStringText :: ConstPtr CChar -> IO Text
-peekConstCStringText = (pack <$>) . peekCString . unConstPtr
-
-withConstCString :: String -> (ConstCString -> IO b) -> IO b
-withConstCString s f = withCString s (f . ConstPtr)
-
-withText :: Text -> (CString -> IO a) -> IO a
-withText t = withCString (unpack t)
-
-withConstText :: Text -> (ConstCString -> IO a) -> IO a
-withConstText t = withConstCString (unpack t)
-
-withErrorHandle :: (AsapoErrorHandle -> IO c) -> IO c
-withErrorHandle = bracket asapo_new_error_handle asapo_free_error_handle
-
--- withErrorHandlePtr :: (Ptr AsapoErrorHandle -> IO c) -> IO c
--- withErrorHandlePtr f = withErrorHandle (`with` f)
-
-withCStringN :: Int -> (CString -> IO a) -> IO a
-withCStringN size = bracket (mallocArray size) free
-
-withCStringNToText :: Int -> (CString -> IO ()) -> IO Text
-withCStringNToText size f =
-  withCStringN size \ptr -> do
-    f ptr
-    pack <$> peekCString ptr
-
-withCredentials :: SourceCredentials -> (AsapoSourceCredentialsHandle -> IO a) -> IO a
-withCredentials
-  ( SourceCredentials
-      { sourceType,
-        instanceId = InstanceId instanceId',
-        pipelineStep = PipelineStep pipelineStep',
-        beamtime = Beamtime beamtime',
-        beamline = Beamline beamline',
-        dataSource = DataSource dataSource',
-        token = Token token'
-      }
-    )
-  f = do
-    let convertSourceType RawSource = kRaw
-        convertSourceType ProcessedSource = kProcessed
-        createCredentialsWithText = withText instanceId' \instanceId'' -> withText pipelineStep' \pipelineStep'' -> withText beamtime' \beamtime'' -> withText beamline' \beamline'' -> withText dataSource' \dataSource'' -> withText token' \token'' ->
-          asapo_create_source_credentials
-            (convertSourceType sourceType)
-            instanceId''
-            pipelineStep''
-            beamtime''
-            beamline''
-            dataSource''
-            token''
-    bracket createCredentialsWithText asapo_free_source_credentials f
 
 checkErrorWithGivenHandle :: AsapoErrorHandle -> b -> IO (Either Error b)
 checkErrorWithGivenHandle errorHandle result = do
@@ -230,14 +152,17 @@ checkErrorWithGivenHandle errorHandle result = do
       pure (Left (Error explanation))
     else pure (Right result)
 
+withErrorHandle :: (AsapoErrorHandle -> IO c) -> IO c
+withErrorHandle = bracket asapo_new_error_handle asapo_free_error_handle
+
 checkError :: (Ptr AsapoErrorHandle -> IO b) -> IO (Either Error b)
 checkError f = do
-  withErrorHandle \errorHandle -> with errorHandle \errorHandlePtr -> do
-    result <- f errorHandlePtr
-    checkErrorWithGivenHandle errorHandle result
+  withErrorHandle \errorHandle -> do
+    (errorHandlePtr, result) <- withPtr errorHandle f
+    checkErrorWithGivenHandle errorHandlePtr result
 
-create :: Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> Milliseconds -> IO (Either Error AsapoProducerHandle)
-create (Endpoint endpoint) (ProcessingThreads processingThreads) handlerType sourceCredentials (Milliseconds milliseconds) = do
+create :: Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> NominalDiffTime -> IO (Either Error AsapoProducerHandle)
+create (Endpoint endpoint) (ProcessingThreads processingThreads) handlerType sourceCredentials timeout = do
   withCredentials sourceCredentials \credentials' ->
     let convertHandlerType TcpHandler = kTcp
         convertHandlerType FilesystemHandler = kFilesystem
@@ -249,11 +174,20 @@ create (Endpoint endpoint) (ProcessingThreads processingThreads) handlerType sou
                   (fromIntegral processingThreads)
                   (convertHandlerType handlerType)
                   credentials'
-                  (fromIntegral milliseconds)
+                  (nominalDiffToMillis timeout)
               )
 
-withProducer :: forall a. Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> Milliseconds -> (Error -> IO a) -> (Producer -> IO a) -> IO a
-withProducer endpoint processingThreads handlerType sourceCredentials milliseconds onError onSuccess = bracket (create endpoint processingThreads handlerType sourceCredentials milliseconds) freeProducer handle
+withProducer ::
+  forall a.
+  Endpoint ->
+  ProcessingThreads ->
+  RequestHandlerType ->
+  SourceCredentials ->
+  NominalDiffTime ->
+  (Error -> IO a) ->
+  (Producer -> IO a) ->
+  IO a
+withProducer endpoint processingThreads handlerType sourceCredentials timeout onError onSuccess = bracket (create endpoint processingThreads handlerType sourceCredentials timeout) freeProducer handle
   where
     freeProducer :: Either Error AsapoProducerHandle -> IO ()
     freeProducer _ = pure ()
@@ -280,53 +214,15 @@ getVersionInfo (Producer producerHandle) =
       -- The return value is a CInt which is unnecessary probably?
       Right _integerReturnCode -> do
         supported <- peek supportedPtr
-        clientInfoCString <- asapo_string_c_str clientInfo
-        serverInfoCString <- asapo_string_c_str serverInfo
-        clientInfo' <- peekConstCStringText clientInfoCString
-        serverInfo' <- peekConstCStringText serverInfoCString
+        clientInfo' <- stringHandleToTextUnsafe clientInfo
+        serverInfo' <- stringHandleToTextUnsafe serverInfo
         pure (Right (VersionInfo clientInfo' serverInfo' (supported > 0)))
 
-data StreamInfo = StreamInfo
-  { streamInfoLastId :: MessageId,
-    streamInfoName :: Text,
-    streamInfoFinished :: Bool,
-    streamInfoNextStream :: Text,
-    streamInfoCreated :: UTCTime,
-    streamInfoLastEntry :: UTCTime
-  }
-  deriving (Show)
-
--- Thanks to
---
--- https://github.com/imoverclocked/convert-times/blob/7f9b45bea8e62dbf14a156a8229b68e07efec5a1/app/Main.hs
-timespecToUTC :: TimeSpec -> UTCTime
-timespecToUTC sc_time =
-  let scEpochInUTC :: UTCTime
-      scEpochInUTC = zonedTimeToUTC $ fromJust $ RFC3339.parseTimeRFC3339 "1970-01-01T00:00:00.00Z"
-      sc2diffTime = fromInteger (toNanoSecs sc_time) / 1000000000 :: NominalDiffTime
-   in addUTCTime sc2diffTime scEpochInUTC
-
-retrieveStreamInfoFromC :: AsapoStreamInfoHandle -> IO StreamInfo
-retrieveStreamInfoFromC infoHandle = do
-  lastId <- asapo_stream_info_get_last_id infoHandle
-  name <- asapo_stream_info_get_name infoHandle >>= peekConstCStringText
-  nextStream <- asapo_stream_info_get_next_stream infoHandle >>= peekConstCStringText
-  finished <- asapo_stream_info_get_finished infoHandle
-  created <- alloca \timespecPtr -> do
-    asapo_stream_info_get_timestamp_created infoHandle timespecPtr
-    timespec <- peek timespecPtr
-    pure (timespecToUTC timespec)
-  lastEntry <- alloca \timespecPtr -> do
-    asapo_stream_info_get_timestamp_last_entry infoHandle timespecPtr
-    timespec <- peek timespecPtr
-    pure (timespecToUTC timespec)
-  pure (StreamInfo (MessageId (fromIntegral lastId)) name (finished > 0) nextStream created lastEntry)
-
-getStreamInfo :: Producer -> StreamName -> Milliseconds -> IO (Either Error StreamInfo)
-getStreamInfo (Producer producer) (StreamName stream) (Milliseconds ms) = bracket init destroy f
+getStreamInfo :: Producer -> StreamName -> NominalDiffTime -> IO (Either Error StreamInfo)
+getStreamInfo (Producer producer) (StreamName stream) timeout = bracket init destroy f
   where
     init :: IO (Either Error AsapoStreamInfoHandle)
-    init = withConstText stream \streamC -> checkError (asapo_producer_get_stream_info producer streamC (fromIntegral ms))
+    init = withConstText stream \streamC -> checkError (asapo_producer_get_stream_info producer streamC (nominalDiffToMillis timeout))
     destroy :: Either Error AsapoStreamInfoHandle -> IO ()
     destroy (Right handle) = asapo_free_stream_info_handle handle
     destroy _ = pure ()
@@ -334,11 +230,11 @@ getStreamInfo (Producer producer) (StreamName stream) (Milliseconds ms) = bracke
     f (Left e) = pure (Left e)
     f (Right streamInfoHandle) = Right <$> retrieveStreamInfoFromC streamInfoHandle
 
-getLastStream :: Producer -> Milliseconds -> IO (Either Error StreamInfo)
-getLastStream (Producer producer) (Milliseconds timeout) = bracket init destroy f
+getLastStream :: Producer -> NominalDiffTime -> IO (Either Error StreamInfo)
+getLastStream (Producer producer) timeout = bracket init destroy f
   where
     init :: IO (Either Error AsapoStreamInfoHandle)
-    init = checkError (asapo_producer_get_last_stream producer (fromIntegral timeout))
+    init = checkError (asapo_producer_get_last_stream producer (nominalDiffToMillis timeout))
     destroy :: Either Error AsapoStreamInfoHandle -> IO ()
     destroy (Right handle) = asapo_free_stream_info_handle handle
     destroy _ = pure ()
@@ -346,49 +242,43 @@ getLastStream (Producer producer) (Milliseconds timeout) = bracket init destroy 
     f (Left e) = pure (Left e)
     f (Right streamInfoHandle) = Right <$> retrieveStreamInfoFromC streamInfoHandle
 
-getStreamMeta :: Producer -> StreamName -> Milliseconds -> IO (Either Error Text)
-getStreamMeta (Producer producer) (StreamName stream) (Milliseconds ms) = bracket init destroy f
+getStreamMeta :: Producer -> StreamName -> NominalDiffTime -> IO (Either Error (Maybe Text))
+getStreamMeta (Producer producer) (StreamName stream) timeout = bracket init destroy f
   where
     init :: IO (Either Error AsapoStringHandle)
-    init = withConstText stream \streamC -> checkError (asapo_producer_get_stream_meta producer streamC (fromIntegral ms))
+    init = withConstText stream \streamC -> checkError (asapo_producer_get_stream_meta producer streamC (nominalDiffToMillis timeout))
     destroy :: Either Error AsapoStringHandle -> IO ()
     destroy (Right handle) = asapo_free_string_handle handle
     destroy _ = pure ()
-    f :: Either Error AsapoStringHandle -> IO (Either Error Text)
+    f :: Either Error AsapoStringHandle -> IO (Either Error (Maybe Text))
     f (Left e) = pure (Left e)
-    f (Right string) = do
-      resultC <- asapo_string_c_str string
-      result <- peekConstCStringText resultC
-      pure (Right result)
+    f (Right string) = Right <$> stringHandleToText string
 
-getBeamtimeMeta :: Producer -> Milliseconds -> IO (Either Error Text)
-getBeamtimeMeta (Producer producer) (Milliseconds ms) = bracket init destroy f
+getBeamtimeMeta :: Producer -> NominalDiffTime -> IO (Either Error (Maybe Text))
+getBeamtimeMeta (Producer producer) timeout = bracket init destroy f
   where
     init :: IO (Either Error AsapoStringHandle)
-    init = checkError (asapo_producer_get_beamtime_meta producer (fromIntegral ms))
+    init = checkError (asapo_producer_get_beamtime_meta producer (nominalDiffToMillis timeout))
     destroy :: Either Error AsapoStringHandle -> IO ()
     destroy (Right handle) = asapo_free_string_handle handle
     destroy _ = pure ()
-    f :: Either Error AsapoStringHandle -> IO (Either Error Text)
+    f :: Either Error AsapoStringHandle -> IO (Either Error (Maybe Text))
     f (Left e) = pure (Left e)
-    f (Right string) = do
-      resultC <- asapo_string_c_str string
-      result <- peekConstCStringText resultC
-      pure (Right result)
+    f (Right string) = Right <$> stringHandleToText string
 
 data DeletionFlags
   = DeleteMeta
   | DeleteErrorOnNotExist
   deriving (Eq)
 
-deleteStream :: Producer -> StreamName -> Milliseconds -> [DeletionFlags] -> IO (Either Error Int)
-deleteStream (Producer producer) (StreamName stream) (Milliseconds timeout) deletionFlags = do
+deleteStream :: Producer -> StreamName -> NominalDiffTime -> [DeletionFlags] -> IO (Either Error Int)
+deleteStream (Producer producer) (StreamName stream) timeout deletionFlags = do
   result <- withConstText stream \streamC ->
     checkError
       ( asapo_producer_delete_stream
           producer
           streamC
-          (fromIntegral timeout)
+          (nominalDiffToMillis timeout)
           (if DeleteMeta `elem` deletionFlags then 1 else 0)
           (if DeleteErrorOnNotExist `elem` deletionFlags then 1 else 0)
       )
@@ -434,7 +324,7 @@ withMessageHeaderHandle (MessageId messageId) (FileName fileName) (Metadata meta
     init :: IO AsapoMessageHeaderHandle
     init = withConstText fileName \fileNameC -> withConstText metadata \metadataC ->
       asapo_create_message_header
-        (fromIntegral messageId)
+        messageId
         (fromIntegral dataSize)
         fileNameC
         metadataC
@@ -509,10 +399,7 @@ data RequestResponse = RequestResponse
 
 sendRequestCallback :: (RequestResponse -> IO ()) -> Ptr () -> AsapoRequestCallbackPayloadHandle -> AsapoErrorHandle -> IO ()
 sendRequestCallback simpleCallback _data payloadHandle errorHandle = do
-  payloadText <-
-    bracket (asapo_request_callback_payload_get_response payloadHandle) asapo_free_string_handle \payloadHandle' -> do
-      payloadC <- asapo_string_c_str payloadHandle'
-      peekConstCStringText payloadC
+  payloadText <- bracket (asapo_request_callback_payload_get_response payloadHandle) asapo_free_string_handle stringHandleToTextUnsafe
   originalHeaderCPtr <- asapo_request_callback_payload_get_original_header payloadHandle
   originalHeaderC <- peek (unConstPtr originalHeaderCPtr)
   originalHeader <- convertRequestHeader originalHeaderC
@@ -609,7 +496,7 @@ sendStreamFinishedFlag (Producer producer) (StreamName stream) (MessageId lastId
         ( asapo_producer_send_stream_finished_flag
             producer
             streamC
-            (fromIntegral lastId)
+            lastId
             nextStreamC
             requestCallback
         )
@@ -699,6 +586,6 @@ setRequestsQueueLimits :: Producer -> Int -> Int -> IO ()
 setRequestsQueueLimits (Producer producer) size volume =
   asapo_producer_set_requests_queue_limits producer (fromIntegral size) (fromIntegral volume)
 
-waitRequestsFinished :: Producer -> Milliseconds -> IO (Either Error Int)
-waitRequestsFinished (Producer producer) (Milliseconds timeout) = do
-  (fromIntegral <$>) <$> checkError (asapo_producer_wait_requests_finished producer (fromIntegral timeout))
+waitRequestsFinished :: Producer -> NominalDiffTime -> IO (Either Error Int)
+waitRequestsFinished (Producer producer) timeout = do
+  (fromIntegral <$>) <$> checkError (asapo_producer_wait_requests_finished producer (nominalDiffToMillis timeout))

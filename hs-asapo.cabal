@@ -27,6 +27,7 @@ library
                  , Asapo.Raw.Consumer
                  , Asapo.Raw.Producer
                  , Asapo.Producer
+                 , Asapo.Consumer
                  , Asapo.Common
   build-depends:
       base >=4.7 && <5
@@ -54,19 +55,23 @@ executable simple-producer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
-    -- also for the high-level interface
     , text
     , bytestring
+    , time
+    , optparse-applicative
     
--- executable simple-consumer
---   import: warnings
---   main-is: Consumer.hs
+executable simple-consumer
+  import: warnings
+  main-is: SimpleConsumer.hs
   
---   ghc-options: -threaded -rtsopts -with-rtsopts=-N
---   hs-source-dirs:
---       app
---   build-depends:
---       base >=4.7 && <5
---     , hs-asapo
---     -- for timespec data type (is Storable)
---     , clock >= 0.8.4 && < 0.9,
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  hs-source-dirs:
+      app
+  build-depends:
+      base >=4.7 && <5
+    , hs-asapo
+    , text
+    , bytestring
+    , time
+    , optparse-applicative
+    
