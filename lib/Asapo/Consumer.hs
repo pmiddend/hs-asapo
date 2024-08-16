@@ -61,7 +61,7 @@ import Asapo.Raw.Consumer (AsapoConsumerErrorType, AsapoConsumerHandle, AsapoDat
 import Control.Applicative (Applicative ((<*>)), pure)
 import Control.Exception (bracket)
 import Control.Monad (Monad ((>>=)), (>=>))
-import Data.Bool (Bool)
+import Data.Bool (Bool, otherwise)
 import qualified Data.ByteString as BS
 import Data.Either (Either (Left, Right))
 import Data.Eq (Eq ((==)))
@@ -81,7 +81,7 @@ import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, newForeignPtr_, withForeig
 import Foreign.Ptr (Ptr)
 import System.IO (IO)
 import Text.Show (Show)
-import Prelude (Num ((-)), Semigroup ((<>)), Show (show), fromIntegral, putStrLn)
+import Prelude (Enum, Num ((-)), Semigroup ((<>)), Show (show), fromIntegral, putStrLn)
 
 newtype ServerName = ServerName Text
 
@@ -213,7 +213,7 @@ getUnacknowledgedMessages (Consumer consumer) (GroupId groupId) (StreamName stre
     handle (Left e) = pure (Left e)
     handle (Right idListHandle) = do
       numberOfIds <- asapo_id_list_get_size idListHandle
-      Right <$> traverse ((MessageId <$>) . asapo_id_list_get_item idListHandle) [0 .. numberOfIds - 1]
+      Right <$> repeatGetterWithSizeLimit ((MessageId <$>) . asapo_id_list_get_item idListHandle) numberOfIds
 
 data NetworkConnectionType = ConnectionUndefined | ConnectionTcp | ConnectionFabric
 
@@ -232,6 +232,14 @@ convertStreamFilter FilterAllStreams = kAllStreams
 convertStreamFilter FilterFinishedStreams = kFinishedStreams
 convertStreamFilter FilterUnfinishedStreams = kUnfinishedStreams
 
+-- An often-repeating pattern: getting a length value and then either
+-- returning an empty list or having another function to get the value
+-- per ID. With an annoying off-by-one error.
+repeatGetterWithSizeLimit :: (Eq a1, Num a1, Applicative f, Enum a1) => (a1 -> f a2) -> a1 -> f [a2]
+repeatGetterWithSizeLimit f n
+  | n == 0 = pure []
+  | otherwise = traverse f [0 .. n - 1]
+
 getStreamList :: Consumer -> Maybe StreamName -> StreamFilter -> IO (Either Error [StreamInfo])
 getStreamList (Consumer consumer) streamName filter = bracket init destroy handle
   where
@@ -245,7 +253,10 @@ getStreamList (Consumer consumer) streamName filter = bracket init destroy handl
     handle (Left e) = pure (Left e)
     handle (Right streamInfosHandle) = do
       numberOfStreams <- asapo_stream_infos_get_size streamInfosHandle
-      Right <$> traverse (asapo_stream_infos_get_item streamInfosHandle >=> retrieveStreamInfoFromC) [0 .. numberOfStreams - 1]
+      Right
+        <$> repeatGetterWithSizeLimit
+          (asapo_stream_infos_get_item streamInfosHandle >=> retrieveStreamInfoFromC)
+          numberOfStreams
 
 data DeleteFlag = DeleteMeta | DontDeleteMeta deriving (Eq)
 
@@ -323,6 +334,7 @@ data MessageMeta = MessageMeta
     messageMetaBufId :: Word64,
     messageMetaDatasetSubstream :: Word64
   }
+  deriving (Show)
 
 resolveMetadata :: AsapoMessageMetaHandle -> IO MessageMeta
 resolveMetadata meta = do
@@ -346,7 +358,7 @@ data Dataset = Dataset
 retrieveDatasetFromC :: AsapoDataSetHandle -> IO Dataset
 retrieveDatasetFromC handle = do
   numberOfItems <- asapo_dataset_get_size handle
-  items <- traverse (asapo_dataset_get_item handle >=> wrapMessageMetaHandle) [0 .. numberOfItems - 1]
+  items <- repeatGetterWithSizeLimit (asapo_dataset_get_item handle >=> wrapMessageMetaHandle) numberOfItems
   Dataset <$> asapo_dataset_get_id handle <*> asapo_dataset_get_expected_size handle <*> pure items
 
 getNextDataset :: Consumer -> GroupId -> Word64 -> StreamName -> IO (Either Error Dataset)
@@ -462,7 +474,7 @@ queryMessagesHandles (Consumer consumer) query (StreamName streamName) = withCon
         Left e -> pure (Left e)
         Right metasHandle' -> do
           numberOfMetas <- asapo_message_metas_get_size metasHandle'
-          Right <$> traverse (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle) [0 .. numberOfMetas - 1]
+          Right <$> repeatGetterWithSizeLimit (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle) numberOfMetas
 
 queryMessages :: Consumer -> Text -> StreamName -> IO (Either Error [MessageMeta])
 queryMessages (Consumer consumer) query (StreamName streamName) = withConstText streamName \streamNameC -> withConstText query \queryC ->
@@ -473,7 +485,7 @@ queryMessages (Consumer consumer) query (StreamName streamName) = withConstText 
         Left e -> pure (Left e)
         Right metasHandle' -> do
           numberOfMetas <- asapo_message_metas_get_size metasHandle'
-          Right <$> traverse (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle >=> resolveMetadata) [0 .. numberOfMetas - 1]
+          Right <$> repeatGetterWithSizeLimit (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle >=> resolveMetadata) numberOfMetas
 
 resendNacs :: Consumer -> Bool -> NominalDiffTime -> Word64 -> IO ()
 resendNacs (Consumer consumer) resend delay = asapo_consumer_set_resend_nacs consumer (if resend then 1 else 0) (nominalDiffToMillis delay)

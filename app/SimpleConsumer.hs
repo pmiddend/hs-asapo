@@ -14,6 +14,7 @@ import Data.Functor ((<$>))
 import Data.Maybe (Maybe (Nothing), fromMaybe)
 import Data.Semigroup (Semigroup ((<>)))
 import Data.Text (Text, pack)
+import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text.IO as TIO
 import Data.Time.Clock (secondsToNominalDiffTime)
 import qualified Options.Applicative as Opt
@@ -65,7 +66,7 @@ realMain (Options serverName withFilesystem) = do
     ( SourceCredentials
         { sourceType = RawSource,
           instanceId = InstanceId "auto",
-          pipelineStep = PipelineStep "pipeline_step_1",
+          pipelineStep = PipelineStep "ps1",
           beamtime = Beamtime "asapo_test",
           beamline = Beamline "",
           dataSource = DataSource "asapo_source",
@@ -90,11 +91,19 @@ realMain (Options serverName withFilesystem) = do
           onSuccess "getCurrentDatasetCount" (getCurrentDatasetCount consumer (streamInfoName stream) IncludeIncomplete) \datasetCount ->
             TIO.putStrLn $ "   dataset count: " <> pack (show datasetCount)
 
-          withGroupId consumer outputError \groupId -> do
-            onSuccess "getNextMessageMeta" (getNextMessageMeta consumer (streamInfoName stream) groupId) \(messageMetaHandle, messageMeta) -> do
-              TIO.putStrLn "   got message meta"
-            onSuccess "getNextMessageMetaAndData" (getNextMessageMetaAndData consumer (streamInfoName stream) groupId) \(messageMetaHandle, messageMeta, messageData) -> do
-              TIO.putStrLn "   got message"
+      -- withGroupId consumer outputError \groupId -> do
+      --   onSuccess "getNextMessageMeta" (getNextMessageMeta consumer (streamInfoName stream) groupId) \(messageMetaHandle, messageMeta) -> do
+      --     TIO.putStrLn "   got message meta"
+      --   onSuccess "getNextMessageMetaAndData" (getNextMessageMetaAndData consumer (streamInfoName stream) groupId) \(messageMetaHandle, messageMeta, messageData) -> do
+      --     TIO.putStrLn "   got message"
+
+      onSuccess
+        "getMessageMetaAndDataById"
+        (getMessageMetaAndDataById consumer (StreamName "default") (messageIdFromInt 155))
+        \(metaHandle, meta, data') -> do
+          TIO.putStrLn "got meta and data"
+          TIO.putStrLn $ "meta: " <> pack (show meta)
+          TIO.putStrLn $ "data: " <> decodeUtf8 data'
 
       TIO.putStrLn "misc: resending nacs"
       resendNacs consumer True (secondsToNominalDiffTime 1) 10

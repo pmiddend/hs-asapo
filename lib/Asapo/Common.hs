@@ -8,6 +8,7 @@ module Asapo.Common
     Beamline (..),
     withPtr,
     Beamtime (..),
+    messageIdFromInt,
     MessageId (..),
     stringHandleToText,
     DataSource (..),
@@ -65,6 +66,9 @@ nominalDiffToMillis :: (Integral a) => NominalDiffTime -> a
 nominalDiffToMillis = round . (* 1000)
 
 newtype MessageId = MessageId Word64 deriving (Show)
+
+messageIdFromInt :: (Integral a) => a -> MessageId
+messageIdFromInt = MessageId . fromIntegral
 
 newtype StreamName = StreamName Text deriving (Show)
 
