@@ -2,6 +2,9 @@
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use camelCase" #-}
 
 module Asapo.Raw.Common
   ( AsapoBool,
@@ -9,8 +12,8 @@ module Asapo.Raw.Common
     AsapoMessageDataHandle (AsapoMessageDataHandle),
     asapo_is_error,
     asapo_string_c_str,
+    mkAsapoFreeWrapper,
     asapo_message_data_get_as_chars,
-    p_asapo_free_handle,
     asapo_free_stream_infos_handle,
     asapo_new_string_handle,
     asapo_free_string_handle,
@@ -69,17 +72,20 @@ asapo_new_string_handle :: IO AsapoStringHandle
 asapo_new_string_handle = AsapoStringHandle <$> asapo_new_handle
 
 asapo_free_string_handle :: AsapoStringHandle -> IO ()
-asapo_free_string_handle (AsapoStringHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_string_handle (AsapoStringHandle ptr) = with ptr asapo_free_handle
 
-foreign import capi "asapo/common/common_c.h &asapo_free_handle__" p_asapo_free_handle :: FunPtr (Ptr () -> IO ())
+-- -- FIXME: this is a custom function I added
+-- -- foreign import capi "asapo/common/common_c.h &asapo_free_handle___" p_asapo_free_handle :: FunPtr (Ptr () -> IO ())
+
+-- foreign import capi "asapo/common/common_c.h &hs_asapo_free_handle_with_ptr___" p_asapo_free_handle :: FunPtr (Ptr () -> IO ())
 
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfoHandle" #-} AsapoStreamInfoHandle = AsapoStreamInfoHandle (Ptr ()) deriving (Storable)
 
 asapo_free_stream_info_handle :: AsapoStreamInfoHandle -> IO ()
-asapo_free_stream_info_handle (AsapoStreamInfoHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_stream_info_handle (AsapoStreamInfoHandle ptr) = with ptr asapo_free_handle
 
 asapo_free_stream_infos_handle :: AsapoStreamInfosHandle -> IO ()
-asapo_free_stream_infos_handle (AsapoStreamInfosHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_stream_infos_handle (AsapoStreamInfosHandle ptr) = with ptr asapo_free_handle
 
 newtype {-# CTYPE "asapo/common/common_c.h" "AsapoStreamInfosHandle" #-} AsapoStreamInfosHandle = AsapoStreamInfosHandle (Ptr ()) deriving (Storable)
 
@@ -89,7 +95,7 @@ asapo_new_message_data_handle :: IO AsapoMessageDataHandle
 asapo_new_message_data_handle = AsapoMessageDataHandle <$> asapo_new_handle
 
 asapo_free_message_data_handle :: AsapoMessageDataHandle -> IO ()
-asapo_free_message_data_handle (AsapoMessageDataHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_message_data_handle (AsapoMessageDataHandle ptr) = with ptr asapo_free_handle
 
 type AsapoSourceType = CInt
 
@@ -99,13 +105,15 @@ foreign import capi "asapo/common/common_c.h value kRaw" kRaw :: AsapoSourceType
 
 foreign import capi "asapo/common/common_c.h asapo_free_handle__" asapo_free_handle :: Ptr (Ptr ()) -> IO ()
 
+foreign import ccall "wrapper" mkAsapoFreeWrapper :: (Ptr () -> IO ()) -> IO (FunPtr (Ptr () -> IO ()))
+
 foreign import capi "asapo/common/common_c.h asapo_new_handle" asapo_new_handle :: IO (Ptr ())
 
 asapo_new_error_handle :: IO AsapoErrorHandle
 asapo_new_error_handle = AsapoErrorHandle <$> asapo_new_handle
 
 asapo_free_error_handle :: AsapoErrorHandle -> IO ()
-asapo_free_error_handle (AsapoErrorHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_error_handle (AsapoErrorHandle ptr) = with ptr asapo_free_handle
 
 foreign import capi "asapo/common/common_c.h asapo_error_explain" asapo_error_explain :: AsapoErrorHandle -> CString -> CSize -> IO ()
 
@@ -155,6 +163,6 @@ foreign import capi "asapo/common/common_c.h asapo_create_source_credentials"
     IO AsapoSourceCredentialsHandle
 
 asapo_free_source_credentials :: AsapoSourceCredentialsHandle -> IO ()
-asapo_free_source_credentials (AsapoSourceCredentialsHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_source_credentials (AsapoSourceCredentialsHandle ptr) = with ptr asapo_free_handle
 
 foreign import capi "asapo/common/common_c.h asapo_message_data_get_as_chars" asapo_message_data_get_as_chars :: AsapoMessageDataHandle -> IO ConstCString

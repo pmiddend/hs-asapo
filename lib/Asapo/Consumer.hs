@@ -1,21 +1,98 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-missing-import-lists #-}
 
+-- |
+-- Description : High-level interface for all consumer-related functions, using exceptions instead of @Either@
+--
+-- To implement an ASAP:O consumer, you should only need this interface.
+-- It exposes no memory-management functions (like free) or pointers, and
+-- is thus safe to use.
+--
+-- = Simple Example
+--
+-- Here's some code for a simple consumer (using the @BlockArguments@ extension):
+--
+-- @
+-- withConsumer
+--   (ServerName "localhost:8040")
+--   (SourcePath "")
+--   WithoutFilesystem
+--   ( SourceCredentials
+--       { sourceType = RawSource,
+--         instanceId = InstanceId "auto",
+--         pipelineStep = PipelineStep "ps1",
+--         beamtime = Beamtime "asapo_test",
+--         beamline = Beamline "",
+--         dataSource = DataSource "asapo_source",
+--         token = "token-please-change"
+--       }
+--   )
+--   \\consumer -> do
+--     beamtimeMeta <- getBeamtimeMeta consumer
+--     putStrLn $ "beamtime metadata: " <> (fromMaybe "N/A" meta)
+--
+--     forM_ streams \\stream -> do
+--       putStrLn $ "=> stream info " <> pack (show stream)
+--       streamSize <- getCurrentSize consumer (streamInfoName stream)
+--       putStrLn $ "   stream size: " <> pack (show streamSize)
+--       datasetCount <- getCurrentDatasetCount consumer (streamInfoName stream) IncludeIncomplete
+--       putStrLn $ "   dataset count: " <> pack (show datasetCount)
+--
+--     meta, data' <- getMessageMetaAndDataById consumer (StreamName "default") (messageIdFromInt 1337)
+--     putStrLn $ "meta: " <> pack (show meta)
+--     putStrLn $ "data: " <> decodeUtf8 data'
+-- @
 module Asapo.Consumer
-  ( withConsumer,
-    FilesystemFlag (..),
-    queryMessages,
-    ServerName (..),
-    resendNacs,
-    IncludeIncompleteFlag (..),
-    SourcePath (..),
+  ( SomeConsumerException,
+    NoData,
+    Consumer,
     Dataset (..),
-    getNextDataset,
+    DeleteFlag (..),
+    ErrorOnNotExistFlag (..),
+    ErrorType (ErrorNoData),
+    FilesystemFlag (..),
+    PipelineStep (..),
+    Beamtime (Beamtime),
+    DataSource (DataSource),
+    Beamline (Beamline),
+    StreamInfo (..),
+    GroupId,
+    IncludeIncompleteFlag (..),
     MessageMeta (..),
-    retrieveDataFromMeta,
+    ServerName (..),
+    SourcePath (..),
+    SourceType (..),
+    StreamName (..),
+    messageIdFromInt,
+    InstanceId (..),
+    Token (..),
+    StreamFilter (..),
+    SourceCredentials (..),
+    withConsumer,
+    withGroupId,
+    setTimeout,
+    retrieveDataForMessageMeta,
+    resetLastReadMarker,
+    setLastReadMarker,
+    acknowledge,
+    negativeAcknowledge,
+    getUnacknowledgedMessages,
+    getCurrentConnectionType,
+    getStreamList,
+    deleteStream,
     setStreamPersistent,
+    getCurrentSize,
+    getCurrentDatasetCount,
+    getBeamtimeMeta,
+    getNextDataset,
+    getLastDataset,
+    getLastDatasetInGroup,
+    resendNacs,
+    queryMessages,
+    getMessageMetaAndDataById,
+    getMessageMetaById,
+    getMessageDataById,
     getLastMessageMetaAndData,
     getLastMessageMeta,
     getLastMessageData,
@@ -25,467 +102,308 @@ module Asapo.Consumer
     getNextMessageMetaAndData,
     getNextMessageMeta,
     getNextMessageData,
-    getCurrentDatasetCount,
-    DeleteFlag (..),
-    getBeamtimeMeta,
-    ErrorOnNotExistFlag (..),
-    getCurrentSize,
-    Consumer,
-    acknowledge,
-    StreamFilter (..),
-    negativeAcknowledge,
-    getMessageMetaAndDataById,
-    getMessageMetaById,
-    getMessageDataById,
-    getUnacknowledgedMessages,
-    GroupId,
-    withGroupId,
-    Error (..),
-    ErrorType (..),
-    queryMessagesHandles,
-    setTimeout,
-    getLastDataset,
-    getLastDatasetInGroup,
-    resetLastReadMarker,
-    setLastReadMarker,
-    getCurrentConnectionType,
-    getStreamList,
-    deleteStream,
-    resolveMetadata,
   )
 where
 
-import Asapo.Common (MessageId (MessageId), SourceCredentials, StreamInfo, StreamName (StreamName), nominalDiffToMillis, peekConstCStringText, retrieveStreamInfoFromC, stringHandleToText, timespecToUTC, withCStringNToText, withConstText, withCredentials, withPtr)
-import Asapo.Raw.Common (AsapoErrorHandle, AsapoMessageDataHandle, AsapoStringHandle, ConstCString, asapo_error_explain, asapo_free_error_handle, asapo_free_message_data_handle, asapo_free_stream_infos_handle, asapo_free_string_handle, asapo_is_error, asapo_new_error_handle, asapo_new_message_data_handle, asapo_stream_infos_get_item, p_asapo_free_handle)
-import Asapo.Raw.Consumer (AsapoConsumerErrorType, AsapoConsumerHandle, AsapoDataSetHandle, AsapoIdListHandle, AsapoMessageMetaHandle (AsapoMessageMetaHandle), AsapoNetworkConnectionType, AsapoStreamFilter, asapo_consumer_acknowledge, asapo_consumer_current_connection_type, asapo_consumer_delete_stream, asapo_consumer_generate_new_group_id, asapo_consumer_get_beamtime_meta, asapo_consumer_get_by_id, asapo_consumer_get_current_dataset_count, asapo_consumer_get_current_size, asapo_consumer_get_last, asapo_consumer_get_last_dataset, asapo_consumer_get_last_dataset_ingroup, asapo_consumer_get_last_ingroup, asapo_consumer_get_next, asapo_consumer_get_next_dataset, asapo_consumer_get_stream_list, asapo_consumer_get_unacknowledged_messages, asapo_consumer_negative_acknowledge, asapo_consumer_query_messages, asapo_consumer_reset_last_read_marker, asapo_consumer_retrieve_data, asapo_consumer_set_last_read_marker, asapo_consumer_set_resend_nacs, asapo_consumer_set_stream_persistent, asapo_consumer_set_timeout, asapo_create_consumer, asapo_dataset_get_expected_size, asapo_dataset_get_id, asapo_dataset_get_item, asapo_dataset_get_size, asapo_error_get_type, asapo_free_id_list_handle, asapo_free_message_metas_handle, asapo_id_list_get_item, asapo_id_list_get_size, asapo_message_data_get_as_chars, asapo_message_meta_get_buf_id, asapo_message_meta_get_dataset_substream, asapo_message_meta_get_id, asapo_message_meta_get_metadata, asapo_message_meta_get_name, asapo_message_meta_get_size, asapo_message_meta_get_source, asapo_message_meta_get_timestamp, asapo_message_metas_get_item, asapo_message_metas_get_size, asapo_new_message_meta_handle, asapo_stream_infos_get_size, kAllStreams, kAsapoTcp, kDataNotInCache, kEndOfStream, kFinishedStreams, kInterruptedTransaction, kLocalIOError, kNoData, kPartialData, kStreamFinished, kUnavailableService, kUndefined, kUnfinishedStreams, kUnsupportedClient, kWrongInput)
-import Control.Applicative (Applicative ((<*>)), pure)
-import Control.Exception (bracket)
-import Control.Monad (Monad ((>>=)), (>=>))
-import Data.Bool (Bool, otherwise)
+import Asapo.Either.Common
+  ( Beamline (Beamline),
+    Beamtime (Beamtime),
+    DataSource (DataSource),
+    InstanceId (..),
+    MessageId,
+    PipelineStep (..),
+    SourceCredentials (..),
+    SourceType (..),
+    StreamInfo (..),
+    StreamName (..),
+    Token (..),
+    messageIdFromInt,
+  )
+import Asapo.Either.Consumer
+  ( Consumer,
+    Dataset (..),
+    DeleteFlag (..),
+    Error (Error),
+    ErrorOnNotExistFlag (..),
+    ErrorType (..),
+    FilesystemFlag (..),
+    GroupId,
+    IncludeIncompleteFlag (..),
+    MessageMeta (..),
+    ServerName (..),
+    SourcePath (..),
+    StreamFilter (..),
+    getCurrentConnectionType,
+    resendNacs,
+    setTimeout,
+  )
+import qualified Asapo.Either.Consumer as PC
+import Control.Applicative (pure)
+import Control.Exception (Exception (fromException, toException), SomeException, throw)
+import Control.Monad (Monad)
 import qualified Data.ByteString as BS
 import Data.Either (Either (Left, Right))
-import Data.Eq (Eq ((==)))
-import Data.Function (($), (.))
-import Data.Functor ((<$>))
+import Data.Function ((.))
 import Data.Int (Int)
-import Data.Maybe (Maybe (Just, Nothing))
-import Data.Ord ((>))
+import Data.Maybe (Maybe)
 import Data.Text (Text)
-import Data.Time (NominalDiffTime, UTCTime)
-import Data.Traversable (Traversable (traverse))
+import Data.Time (NominalDiffTime)
+import Data.Typeable (cast)
 import Data.Word (Word64)
-import Foreign (Storable (peek), with)
-import Foreign.C (CInt)
-import Foreign.C.ConstPtr (ConstPtr (unConstPtr))
-import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, newForeignPtr_, withForeignPtr)
-import Foreign.Ptr (Ptr)
 import System.IO (IO)
-import Text.Show (Show)
-import Prelude (Enum, Num ((-)), Semigroup ((<>)), Show (show), fromIntegral, putStrLn)
+import Text.Show (Show, show)
+import Prelude ()
 
-newtype ServerName = ServerName Text
+data SomeConsumerException = forall e. (Exception e) => SomeConsumerException e
 
-newtype SourcePath = SourcePath Text
+instance Show SomeConsumerException where
+  show (SomeConsumerException e) = show e
 
-data FilesystemFlag = WithFilesystem | WithoutFilesystem deriving (Eq)
+instance Exception SomeConsumerException
 
-newtype Consumer = Consumer AsapoConsumerHandle
+consumerExceptionToException :: (Exception e) => e -> SomeException
+consumerExceptionToException = toException . SomeConsumerException
 
-data ErrorType
-  = ErrorNoData
-  | ErrorEndOfStream
-  | ErrorStreamFinished
-  | ErrorUnavailableService
-  | ErrorInterruptedTransaction
-  | ErrorLocalIOError
-  | ErrorWrongInput
-  | ErrorPartialData
-  | ErrorUnsupportedClient
-  | ErrorDataNotInCache
-  | ErrorUnknownError
-  deriving (Show)
+consumerExceptionFromException :: (Exception e) => SomeException -> Maybe e
+consumerExceptionFromException x = do
+  SomeConsumerException a <- fromException x
+  cast a
 
-convertErrorType :: AsapoConsumerErrorType -> ErrorType
-convertErrorType x | x == kNoData = ErrorNoData
-convertErrorType x | x == kEndOfStream = ErrorEndOfStream
-convertErrorType x | x == kStreamFinished = ErrorStreamFinished
-convertErrorType x | x == kUnavailableService = ErrorUnavailableService
-convertErrorType x | x == kInterruptedTransaction = ErrorInterruptedTransaction
-convertErrorType x | x == kLocalIOError = ErrorLocalIOError
-convertErrorType x | x == kWrongInput = ErrorWrongInput
-convertErrorType x | x == kPartialData = ErrorPartialData
-convertErrorType x | x == kUnsupportedClient = ErrorUnsupportedClient
-convertErrorType x | x == kDataNotInCache = ErrorDataNotInCache
-convertErrorType _ = ErrorUnknownError
+newtype NoData = NoData Text deriving (Show)
 
-data Error = Error
-  { errorMessage :: Text,
-    errorType :: ErrorType
-  }
-  deriving (Show)
+instance Exception NoData where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
 
-checkErrorWithGivenHandle :: AsapoErrorHandle -> b -> IO (Either Error b)
-checkErrorWithGivenHandle errorHandle result = do
-  isError <- asapo_is_error errorHandle
-  if isError > 0
-    then do
-      let explanationLength = 1024
-      explanation <- withCStringNToText explanationLength \explanationPtr ->
-        asapo_error_explain
-          errorHandle
-          explanationPtr
-          (fromIntegral explanationLength)
-      errorType' <- asapo_error_get_type errorHandle
-      pure (Left (Error explanation (convertErrorType errorType')))
-    else pure (Right result)
+newtype EndOfStream = EndOfStream Text deriving (Show)
 
-withErrorHandle :: (AsapoErrorHandle -> IO c) -> IO c
-withErrorHandle = bracket asapo_new_error_handle asapo_free_error_handle
+instance Exception EndOfStream where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
 
-checkError :: (Ptr AsapoErrorHandle -> IO b) -> IO (Either Error b)
-checkError f = do
-  withErrorHandle \errorHandle -> do
-    (errorHandlePtr, result) <- withPtr errorHandle f
-    checkErrorWithGivenHandle errorHandlePtr result
+newtype StreamFinished = StreamFinished Text deriving (Show)
 
-withSuccess :: (Ptr AsapoErrorHandle -> IO t) -> (t -> IO (Either Error b)) -> IO (Either Error b)
-withSuccess toCheck onSuccess = do
-  result <- checkError toCheck
+instance Exception StreamFinished where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype UnavailableService = UnavailableService Text deriving (Show)
+
+instance Exception UnavailableService where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype InterruptedTransaction = InterruptedTransaction Text deriving (Show)
+
+instance Exception InterruptedTransaction where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype LocalIOError = LocalIOError Text deriving (Show)
+
+instance Exception LocalIOError where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype WrongInput = WrongInput Text deriving (Show)
+
+instance Exception WrongInput where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype PartialData = PartialData Text deriving (Show)
+
+instance Exception PartialData where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype UnsupportedClient = UnsupportedClient Text deriving (Show)
+
+instance Exception UnsupportedClient where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype DataNotInCache = DataNotInCache Text deriving (Show)
+
+instance Exception DataNotInCache where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+newtype UnknownError = UnknownError Text deriving (Show)
+
+instance Exception UnknownError where
+  toException = consumerExceptionToException
+  fromException = consumerExceptionFromException
+
+errorTypeToException :: ErrorType -> Text -> a
+errorTypeToException ErrorNoData = throw . NoData
+errorTypeToException ErrorEndOfStream = throw . EndOfStream
+errorTypeToException ErrorStreamFinished = throw . StreamFinished
+errorTypeToException ErrorUnavailableService = throw . UnavailableService
+errorTypeToException ErrorInterruptedTransaction = throw . InterruptedTransaction
+errorTypeToException ErrorLocalIOError = throw . LocalIOError
+errorTypeToException ErrorWrongInput = throw . WrongInput
+errorTypeToException ErrorPartialData = throw . PartialData
+errorTypeToException ErrorUnsupportedClient = throw . UnsupportedClient
+errorTypeToException ErrorDataNotInCache = throw . DataNotInCache
+errorTypeToException ErrorUnknownError = throw . UnknownError
+
+-- | Create a consumer and do something with it. This is the main entrypoint into the consumer
+withConsumer :: forall a. ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> (Consumer -> IO a) -> IO a
+withConsumer serverName sourcePath filesystemFlag creds onSuccess =
+  let onError (Error errorMessage errorType) = errorTypeToException errorType errorMessage
+   in PC.withConsumer serverName sourcePath filesystemFlag creds onError onSuccess
+
+-- | Allocate a group ID and call a callback
+withGroupId :: forall a. Consumer -> (GroupId -> IO a) -> IO a
+withGroupId consumer onSuccess =
+  let onError (Error errorMessage errorType) = errorTypeToException errorType errorMessage
+   in PC.withGroupId consumer onError onSuccess
+
+maybeThrow :: (Monad m) => m (Either Error b) -> m b
+maybeThrow f = do
+  result <- f
   case result of
-    Left e -> pure (Left e)
-    Right success -> onSuccess success
+    Left (Error errorMessage errorType) -> errorTypeToException errorType errorMessage
+    Right v -> pure v
 
-create :: ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> IO (Either Error AsapoConsumerHandle)
-create (ServerName serverName) (SourcePath sourcePath) fsFlag creds =
-  withCredentials creds \creds' ->
-    withConstText serverName \serverNameC ->
-      withConstText sourcePath \sourcePathC ->
-        checkError (asapo_create_consumer serverNameC sourcePathC (if fsFlag == WithFilesystem then 1 else 0) creds')
+-- | Reset the last read marker for the stream
+resetLastReadMarker :: Consumer -> GroupId -> StreamName -> IO Int
+resetLastReadMarker consumer groupId streamName = maybeThrow (PC.resetLastReadMarker consumer groupId streamName)
 
-withConsumer :: forall a. ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> (Error -> IO a) -> (Consumer -> IO a) -> IO a
-withConsumer serverName sourcePath filesystemFlag creds onError onSuccess = bracket (create serverName sourcePath filesystemFlag creds) freeConsumer handle
-  where
-    freeConsumer :: Either Error AsapoConsumerHandle -> IO ()
-    freeConsumer _ = pure ()
-    handle :: Either Error AsapoConsumerHandle -> IO a
-    handle (Left e) = onError e
-    handle (Right v) = onSuccess (Consumer v)
+-- | Set the last read marker for the stream
+setLastReadMarker :: Consumer -> GroupId -> StreamName -> MessageId -> IO Int
+setLastReadMarker consumer groupId streamName value = maybeThrow (PC.setLastReadMarker consumer groupId streamName value)
 
-newtype GroupId = GroupId AsapoStringHandle
+-- | Acknowledge a specific message
+acknowledge :: Consumer -> GroupId -> StreamName -> MessageId -> IO Int
+acknowledge consumer groupId streamName messageId = maybeThrow (PC.acknowledge consumer groupId streamName messageId)
 
-withGroupId :: forall a. Consumer -> (Error -> IO a) -> (GroupId -> IO a) -> IO a
-withGroupId (Consumer consumerHandle) onError onSuccess = bracket createGroupId destroy handle
-  where
-    createGroupId = withSuccess (asapo_consumer_generate_new_group_id consumerHandle) (pure . Right . GroupId)
-    destroy (Right (GroupId stringHandle)) = asapo_free_string_handle stringHandle
-    destroy _ = pure ()
-    handle (Right v) = onSuccess v
-    handle (Left e) = onError e
-
-setTimeout :: Consumer -> NominalDiffTime -> IO ()
-setTimeout (Consumer consumerHandle) timeout = asapo_consumer_set_timeout consumerHandle (nominalDiffToMillis timeout)
-
-resetLastReadMarker :: Consumer -> GroupId -> StreamName -> IO (Either Error Int)
-resetLastReadMarker (Consumer consumer) (GroupId groupId) (StreamName streamName) =
-  withConstText streamName \streamNameC -> (fromIntegral <$>) <$> checkError (asapo_consumer_reset_last_read_marker consumer groupId streamNameC)
-
-setLastReadMarker :: Consumer -> GroupId -> StreamName -> MessageId -> IO (Either Error Int)
-setLastReadMarker (Consumer consumer) (GroupId groupId) (StreamName streamName) (MessageId value) =
-  withConstText streamName \streamNameC -> (fromIntegral <$>) <$> checkError (asapo_consumer_set_last_read_marker consumer groupId value streamNameC)
-
-acknowledge :: Consumer -> GroupId -> StreamName -> MessageId -> IO (Either Error Int)
-acknowledge (Consumer consumer) (GroupId groupId) (StreamName streamName) (MessageId messageId) =
-  withConstText streamName \streamNameC -> (fromIntegral <$>) <$> checkError (asapo_consumer_acknowledge consumer groupId messageId streamNameC)
-
-negativeAcknowledge :: Consumer -> GroupId -> StreamName -> MessageId -> NominalDiffTime -> IO (Either Error Int)
-negativeAcknowledge (Consumer consumer) (GroupId groupId) (StreamName streamName) (MessageId messageId) delay =
-  withConstText streamName \streamNameC -> (fromIntegral <$>) <$> checkError (asapo_consumer_negative_acknowledge consumer groupId messageId (nominalDiffToMillis delay) streamNameC)
-
-getUnacknowledgedMessages :: Consumer -> GroupId -> StreamName -> (MessageId, MessageId) -> IO (Either Error [MessageId])
-getUnacknowledgedMessages (Consumer consumer) (GroupId groupId) (StreamName streamName) (MessageId from, MessageId to) = bracket init destroy handle
-  where
-    init :: IO (Either Error AsapoIdListHandle)
-    init = withConstText streamName $ checkError . asapo_consumer_get_unacknowledged_messages consumer groupId from to
-    destroy :: Either Error AsapoIdListHandle -> IO ()
-    destroy (Left _) = pure ()
-    destroy (Right handle') = asapo_free_id_list_handle handle'
-    handle :: Either Error AsapoIdListHandle -> IO (Either Error [MessageId])
-    handle (Left e) = pure (Left e)
-    handle (Right idListHandle) = do
-      numberOfIds <- asapo_id_list_get_size idListHandle
-      Right <$> repeatGetterWithSizeLimit ((MessageId <$>) . asapo_id_list_get_item idListHandle) numberOfIds
-
-data NetworkConnectionType = ConnectionUndefined | ConnectionTcp | ConnectionFabric
-
-convertConnectionType :: AsapoNetworkConnectionType -> NetworkConnectionType
-convertConnectionType x | x == kUndefined = ConnectionUndefined
-convertConnectionType x | x == kAsapoTcp = ConnectionTcp
-convertConnectionType _ = ConnectionFabric
-
-getCurrentConnectionType :: Consumer -> IO NetworkConnectionType
-getCurrentConnectionType (Consumer consumerHandle) = convertConnectionType <$> asapo_consumer_current_connection_type consumerHandle
-
-data StreamFilter = FilterAllStreams | FilterFinishedStreams | FilterUnfinishedStreams
-
-convertStreamFilter :: StreamFilter -> AsapoStreamFilter
-convertStreamFilter FilterAllStreams = kAllStreams
-convertStreamFilter FilterFinishedStreams = kFinishedStreams
-convertStreamFilter FilterUnfinishedStreams = kUnfinishedStreams
-
--- An often-repeating pattern: getting a length value and then either
--- returning an empty list or having another function to get the value
--- per ID. With an annoying off-by-one error.
-repeatGetterWithSizeLimit :: (Eq a1, Num a1, Applicative f, Enum a1) => (a1 -> f a2) -> a1 -> f [a2]
-repeatGetterWithSizeLimit f n
-  | n == 0 = pure []
-  | otherwise = traverse f [0 .. n - 1]
-
-getStreamList :: Consumer -> Maybe StreamName -> StreamFilter -> IO (Either Error [StreamInfo])
-getStreamList (Consumer consumer) streamName filter = bracket init destroy handle
-  where
-    init =
-      let realStreamName = case streamName of
-            Nothing -> ""
-            Just (StreamName streamName') -> streamName'
-       in withConstText realStreamName $ \streamNameC -> checkError (asapo_consumer_get_stream_list consumer streamNameC (convertStreamFilter filter))
-    destroy (Left _) = pure ()
-    destroy (Right handle') = asapo_free_stream_infos_handle handle'
-    handle (Left e) = pure (Left e)
-    handle (Right streamInfosHandle) = do
-      numberOfStreams <- asapo_stream_infos_get_size streamInfosHandle
-      Right
-        <$> repeatGetterWithSizeLimit
-          (asapo_stream_infos_get_item streamInfosHandle >=> retrieveStreamInfoFromC)
-          numberOfStreams
-
-data DeleteFlag = DeleteMeta | DontDeleteMeta deriving (Eq)
-
-data ErrorOnNotExistFlag = ErrorOnNotExist | NoErrorOnNotExist deriving (Eq)
-
-deleteStream :: Consumer -> StreamName -> DeleteFlag -> ErrorOnNotExistFlag -> IO (Either Error Int)
-deleteStream (Consumer consumer) (StreamName streamName) deleteFlag errorOnNotExistFlag =
-  withConstText streamName \streamNameC ->
-    (fromIntegral <$>)
-      <$> checkError
-        ( asapo_consumer_delete_stream
-            consumer
-            streamNameC
-            (if deleteFlag == DeleteMeta then 1 else 0)
-            (if errorOnNotExistFlag == ErrorOnNotExist then 1 else 0)
-        )
-
-setStreamPersistent :: Consumer -> StreamName -> IO (Either Error Int)
-setStreamPersistent (Consumer consumer) (StreamName streamName) =
-  withConstText streamName \streamNameC ->
-    (fromIntegral <$>)
-      <$> checkError
-        ( asapo_consumer_set_stream_persistent
-            consumer
-            streamNameC
-        )
-
-getCurrentSize :: Consumer -> StreamName -> IO (Either Error Int)
-getCurrentSize (Consumer consumer) (StreamName streamName) =
-  withConstText streamName \streamNameC ->
-    (fromIntegral <$>)
-      <$> checkError
-        ( asapo_consumer_get_current_size
-            consumer
-            streamNameC
-        )
-
-data IncludeIncompleteFlag = IncludeIncomplete | ExcludeIncomplete deriving (Eq)
-
-getCurrentDatasetCount :: Consumer -> StreamName -> IncludeIncompleteFlag -> IO (Either Error Int)
-getCurrentDatasetCount (Consumer consumer) (StreamName streamName) inludeIncomplete =
-  withConstText streamName \streamNameC ->
-    (fromIntegral <$>)
-      <$> checkError
-        ( asapo_consumer_get_current_dataset_count
-            consumer
-            streamNameC
-            (if inludeIncomplete == IncludeIncomplete then 1 else 0)
-        )
-
-getBeamtimeMeta :: Consumer -> IO (Either Error (Maybe Text))
-getBeamtimeMeta (Consumer consumer) = checkError (asapo_consumer_get_beamtime_meta consumer) >>= traverse stringHandleToText
-
-newtype MessageMetaHandle = MessageMetaHandle (ForeignPtr ())
-
-withMessageMetaHandle :: MessageMetaHandle -> (AsapoMessageMetaHandle -> IO a) -> IO a
-withMessageMetaHandle (MessageMetaHandle foreignPtr) f = withForeignPtr foreignPtr (f . AsapoMessageMetaHandle)
-
-newMessageMetaHandle :: IO MessageMetaHandle
-newMessageMetaHandle = do
-  AsapoMessageMetaHandle internalHandle <- asapo_new_message_meta_handle
-  -- MessageMetaHandle <$> newForeignPtr p_asapo_free_handle internalHandle
-  MessageMetaHandle <$> newForeignPtr_ internalHandle
-
-wrapMessageMetaHandle :: AsapoMessageMetaHandle -> IO AsapoMessageMetaHandle
-wrapMessageMetaHandle = pure
-
-data MessageMeta = MessageMeta
-  { messageMetaName :: Text,
-    messageMetaTimestamp :: UTCTime,
-    messageMetaSize :: Word64,
-    messageMetaId :: MessageId,
-    messageMetaSource :: Text,
-    messageMetaMetadata :: Text,
-    messageMetaBufId :: Word64,
-    messageMetaDatasetSubstream :: Word64
-  }
-  deriving (Show)
-
-resolveMetadata :: AsapoMessageMetaHandle -> IO MessageMeta
-resolveMetadata meta = do
-  (timestamp, _) <- withPtr 0 (asapo_message_meta_get_timestamp meta)
-  MessageMeta
-    <$> (asapo_message_meta_get_name meta >>= peekConstCStringText)
-    <*> pure (timespecToUTC timestamp)
-    <*> asapo_message_meta_get_size meta
-    <*> (MessageId <$> asapo_message_meta_get_id meta)
-    <*> (asapo_message_meta_get_source meta >>= peekConstCStringText)
-    <*> (asapo_message_meta_get_metadata meta >>= peekConstCStringText)
-    <*> asapo_message_meta_get_buf_id meta
-    <*> asapo_message_meta_get_dataset_substream meta
-
-data Dataset = Dataset
-  { datasetId :: Word64,
-    datasetExpectedSize :: Word64,
-    datasetItems :: [AsapoMessageMetaHandle]
-  }
-
-retrieveDatasetFromC :: AsapoDataSetHandle -> IO Dataset
-retrieveDatasetFromC handle = do
-  numberOfItems <- asapo_dataset_get_size handle
-  items <- repeatGetterWithSizeLimit (asapo_dataset_get_item handle >=> wrapMessageMetaHandle) numberOfItems
-  Dataset <$> asapo_dataset_get_id handle <*> asapo_dataset_get_expected_size handle <*> pure items
-
-getNextDataset :: Consumer -> GroupId -> Word64 -> StreamName -> IO (Either Error Dataset)
-getNextDataset (Consumer consumer) (GroupId groupId) minSize (StreamName streamName) = withConstText streamName \streamNameC -> do
-  checkError (asapo_consumer_get_next_dataset consumer groupId minSize streamNameC) >>= traverse retrieveDatasetFromC
-
-getLastDataset :: Consumer -> Word64 -> StreamName -> IO (Either Error Dataset)
-getLastDataset (Consumer consumer) minSize (StreamName streamName) = withConstText streamName \streamNameC -> do
-  checkError (asapo_consumer_get_last_dataset consumer minSize streamNameC) >>= traverse retrieveDatasetFromC
-
-getLastDatasetInGroup :: Consumer -> GroupId -> Word64 -> StreamName -> IO (Either Error Dataset)
-getLastDatasetInGroup (Consumer consumer) (GroupId groupId) minSize (StreamName streamName) = withConstText streamName \streamNameC -> do
-  checkError (asapo_consumer_get_last_dataset_ingroup consumer groupId minSize streamNameC) >>= traverse retrieveDatasetFromC
-
-withMessageDataHandle :: (AsapoMessageDataHandle -> IO a) -> IO a
-withMessageDataHandle = bracket asapo_new_message_data_handle asapo_free_message_data_handle
-
-retrieveDataFromHandle :: AsapoMessageDataHandle -> IO BS.ByteString
-retrieveDataFromHandle dataHandle = do
-  messageCString <- asapo_message_data_get_as_chars dataHandle
-  BS.packCString (unConstPtr messageCString)
-
-retrieveDataFromMeta :: Consumer -> MessageMetaHandle -> IO (Either Error BS.ByteString)
-retrieveDataFromMeta (Consumer consumer) metaHandle =
-  withMessageMetaHandle metaHandle \metaHandlePtr ->
-    withMessageDataHandle \dataHandle ->
-      with dataHandle \dataHandlePtr ->
-        withSuccess (asapo_consumer_retrieve_data consumer metaHandlePtr dataHandlePtr) \_result -> do
-          changedDataHandle <- peek dataHandlePtr
-          Right <$> retrieveDataFromHandle changedDataHandle
-
-withMessageHandles ::
+-- | Negatively acknowledge a specific message
+negativeAcknowledge ::
+  Consumer ->
+  GroupId ->
   StreamName ->
-  (Ptr AsapoMessageMetaHandle -> Ptr AsapoMessageDataHandle -> ConstCString -> Ptr AsapoErrorHandle -> IO CInt) ->
-  (AsapoMessageMetaHandle -> AsapoMessageDataHandle -> IO (Either Error a)) ->
-  IO (Either Error a)
-withMessageHandles (StreamName streamName) g f = do
-  metaHandle <- newMessageMetaHandle
-  withMessageMetaHandle metaHandle \metaHandleInternal ->
-    with metaHandleInternal \metaHandleInternalPtr ->
-      withMessageDataHandle \dataHandle ->
-        with dataHandle \dataHandlePtr ->
-          withConstText streamName \streamNameC ->
-            withSuccess (g metaHandleInternalPtr dataHandlePtr streamNameC) \_result -> do
-              newHandle <- peek metaHandleInternalPtr
-              newDataHandle <- peek dataHandlePtr
-              f newHandle newDataHandle
+  MessageId ->
+  -- | delay
+  NominalDiffTime ->
+  IO Int
+negativeAcknowledge consumer groupId streamName messageId delay = maybeThrow (PC.negativeAcknowledge consumer groupId streamName messageId delay)
 
-withMessageHandlesById :: Consumer -> StreamName -> MessageId -> (AsapoMessageMetaHandle -> AsapoMessageDataHandle -> IO (Either Error a)) -> IO (Either Error a)
-withMessageHandlesById (Consumer consumer) streamName (MessageId messageId) = withMessageHandles streamName (asapo_consumer_get_by_id consumer messageId)
+-- | Get a list of all unacknowledged message IDs in a range
+getUnacknowledgedMessages :: Consumer -> GroupId -> StreamName -> (MessageId, MessageId) -> IO [MessageId]
+getUnacknowledgedMessages consumer groupId streamName (from, to) = maybeThrow (PC.getUnacknowledgedMessages consumer groupId streamName (from, to))
 
-retrieveMessageMetaAndData :: AsapoMessageMetaHandle -> AsapoMessageDataHandle -> IO (Either a (AsapoMessageMetaHandle, MessageMeta, BS.ByteString))
-retrieveMessageMetaAndData metaHandle dataHandle = do
-  data' <- retrieveDataFromHandle dataHandle
-  meta <- resolveMetadata metaHandle
-  pure (Right (metaHandle, meta, data'))
+-- | Retrieve the list of streams with metadata
+getStreamList :: Consumer -> Maybe StreamName -> StreamFilter -> IO [StreamInfo]
+getStreamList consumer streamName filter = maybeThrow (PC.getStreamList consumer streamName filter)
 
-retrieveMessageMeta :: AsapoMessageMetaHandle -> p -> IO (Either a (AsapoMessageMetaHandle, MessageMeta))
-retrieveMessageMeta metaHandle _dataHandle = do
-  meta <- resolveMetadata metaHandle
-  pure (Right (metaHandle, meta))
+-- | Delete a given stream
+deleteStream :: Consumer -> StreamName -> DeleteFlag -> ErrorOnNotExistFlag -> IO Int
+deleteStream consumer streamName deleteFlag errorOnNotExistFlag = maybeThrow (PC.deleteStream consumer streamName deleteFlag errorOnNotExistFlag)
 
-retrieveMessageData :: p -> AsapoMessageDataHandle -> IO (Either a BS.ByteString)
-retrieveMessageData _metaHandle dataHandle = do
-  data' <- retrieveDataFromHandle dataHandle
-  pure (Right data')
+-- | Set a stream persistent
+setStreamPersistent :: Consumer -> StreamName -> IO Int
+setStreamPersistent consumer streamName = maybeThrow (PC.setStreamPersistent consumer streamName)
 
-getMessageMetaAndDataById :: Consumer -> StreamName -> MessageId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta, BS.ByteString))
-getMessageMetaAndDataById consumer streamName messageId =
-  withMessageHandlesById consumer streamName messageId retrieveMessageMetaAndData
+-- | Get the current size (number of messages) of the stream
+getCurrentSize :: Consumer -> StreamName -> IO Int
+getCurrentSize consumer streamName = maybeThrow (PC.getCurrentSize consumer streamName)
 
-getMessageMetaById :: Consumer -> StreamName -> MessageId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta))
-getMessageMetaById consumer streamName messageId = do
-  withMessageHandlesById consumer streamName messageId retrieveMessageMeta
+-- | Get number of datasets in stream
+getCurrentDatasetCount :: Consumer -> StreamName -> IncludeIncompleteFlag -> IO Int
+getCurrentDatasetCount consumer streamName inludeIncomplete = maybeThrow (PC.getCurrentDatasetCount consumer streamName inludeIncomplete)
 
-getMessageDataById :: Consumer -> StreamName -> MessageId -> IO (Either Error BS.ByteString)
-getMessageDataById consumer streamName messageId = do
-  withMessageHandlesById consumer streamName messageId retrieveMessageData
+-- | Get beamtime metadata (which can be not set, in which case @Nothing@ is returned)
+getBeamtimeMeta :: Consumer -> IO (Maybe Text)
+getBeamtimeMeta consumer = maybeThrow (PC.getBeamtimeMeta consumer)
 
-getLastMessageMetaAndData :: Consumer -> StreamName -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta, BS.ByteString))
-getLastMessageMetaAndData (Consumer consumer) streamName = withMessageHandles streamName (asapo_consumer_get_last consumer) retrieveMessageMetaAndData
+-- | Get the next dataset for a stream
+getNextDataset ::
+  Consumer ->
+  GroupId ->
+  -- | minimum size
+  Word64 ->
+  StreamName ->
+  IO Dataset
+getNextDataset consumer groupId minSize streamName = maybeThrow (PC.getNextDataset consumer groupId minSize streamName)
 
-getLastMessageMeta :: Consumer -> StreamName -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta))
-getLastMessageMeta (Consumer consumer) streamName = withMessageHandles streamName (asapo_consumer_get_last consumer) retrieveMessageMeta
+-- | Get the last dataset in the stream
+getLastDataset ::
+  Consumer ->
+  -- | minimum size
+  Word64 ->
+  StreamName ->
+  IO Dataset
+getLastDataset consumer minSize streamName = maybeThrow (PC.getLastDataset consumer minSize streamName)
 
-getLastMessageData :: Consumer -> StreamName -> IO (Either Error BS.ByteString)
-getLastMessageData (Consumer consumer) streamName = withMessageHandles streamName (asapo_consumer_get_last consumer) retrieveMessageData
+-- | Get the last data ste in the given group
+getLastDatasetInGroup ::
+  Consumer ->
+  GroupId ->
+  -- | minimum size
+  Word64 ->
+  StreamName ->
+  IO Dataset
+getLastDatasetInGroup consumer groupId minSize streamName = maybeThrow (PC.getLastDatasetInGroup consumer groupId minSize streamName)
 
-getLastInGroupMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta, BS.ByteString))
-getLastInGroupMessageMetaAndData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_last_ingroup consumer groupId) retrieveMessageMetaAndData
+-- | Given a message ID, retrieve both metadata and data
+getMessageMetaAndDataById :: Consumer -> StreamName -> MessageId -> IO (MessageMeta, BS.ByteString)
+getMessageMetaAndDataById consumer streamName messageId = maybeThrow (PC.getMessageMetaAndDataById consumer streamName messageId)
 
-getLastInGroupMessageMeta :: Consumer -> StreamName -> GroupId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta))
-getLastInGroupMessageMeta (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_last_ingroup consumer groupId) retrieveMessageMeta
+-- | Given a message ID, retrieve only the metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getMessageMetaById :: Consumer -> StreamName -> MessageId -> IO MessageMeta
+getMessageMetaById consumer streamName messageId = maybeThrow (PC.getMessageMetaById consumer streamName messageId)
 
-getLastInGroupMessageData :: Consumer -> StreamName -> GroupId -> IO (Either Error BS.ByteString)
-getLastInGroupMessageData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_last_ingroup consumer groupId) retrieveMessageData
+-- | Given a message ID, retrieve only the data
+getMessageDataById :: Consumer -> StreamName -> MessageId -> IO BS.ByteString
+getMessageDataById consumer streamName messageId = maybeThrow (PC.getMessageDataById consumer streamName messageId)
 
-getNextMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta, BS.ByteString))
-getNextMessageMetaAndData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next consumer groupId) retrieveMessageMetaAndData
+-- | Retrieve the last message in the stream, with data and metadata
+getLastMessageMetaAndData :: Consumer -> StreamName -> IO (MessageMeta, BS.ByteString)
+getLastMessageMetaAndData consumer streamName = maybeThrow (PC.getLastMessageMetaAndData consumer streamName)
 
-getNextMessageMeta :: Consumer -> StreamName -> GroupId -> IO (Either Error (AsapoMessageMetaHandle, MessageMeta))
-getNextMessageMeta (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next consumer groupId) retrieveMessageMeta
+-- | Retrieve the last message in the stream, only metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getLastMessageMeta :: Consumer -> StreamName -> IO MessageMeta
+getLastMessageMeta consumer streamName = maybeThrow (PC.getLastMessageMeta consumer streamName)
 
-getNextMessageData :: Consumer -> StreamName -> GroupId -> IO (Either Error BS.ByteString)
-getNextMessageData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next consumer groupId) retrieveMessageData
+-- | Retrieve the last message in the stream, only data
+getLastMessageData :: Consumer -> StreamName -> IO BS.ByteString
+getLastMessageData consumer streamName = maybeThrow (PC.getLastMessageData consumer streamName)
 
-queryMessagesHandles :: Consumer -> Text -> StreamName -> IO (Either Error [AsapoMessageMetaHandle])
-queryMessagesHandles (Consumer consumer) query (StreamName streamName) = withConstText streamName \streamNameC -> withConstText query \queryC ->
-  let init = checkError (asapo_consumer_query_messages consumer queryC streamNameC)
-      destroy (Left _) = pure ()
-      destroy (Right v) = asapo_free_message_metas_handle v
-   in bracket init destroy \case
-        Left e -> pure (Left e)
-        Right metasHandle' -> do
-          numberOfMetas <- asapo_message_metas_get_size metasHandle'
-          Right <$> repeatGetterWithSizeLimit (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle) numberOfMetas
+-- | Retrieve the last message in a given stream and group, with data and metadata
+getLastInGroupMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (MessageMeta, BS.ByteString)
+getLastInGroupMessageMetaAndData consumer streamName groupId = maybeThrow (PC.getLastInGroupMessageMetaAndData consumer streamName groupId)
 
-queryMessages :: Consumer -> Text -> StreamName -> IO (Either Error [MessageMeta])
-queryMessages (Consumer consumer) query (StreamName streamName) = withConstText streamName \streamNameC -> withConstText query \queryC ->
-  let init = checkError (asapo_consumer_query_messages consumer queryC streamNameC)
-      destroy (Left _) = pure ()
-      destroy (Right v) = asapo_free_message_metas_handle v
-   in bracket init destroy \case
-        Left e -> pure (Left e)
-        Right metasHandle' -> do
-          numberOfMetas <- asapo_message_metas_get_size metasHandle'
-          Right <$> repeatGetterWithSizeLimit (asapo_message_metas_get_item metasHandle' >=> wrapMessageMetaHandle >=> resolveMetadata) numberOfMetas
+-- | Retrieve the last message in a given stream and group, only metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getLastInGroupMessageMeta :: Consumer -> StreamName -> GroupId -> IO MessageMeta
+getLastInGroupMessageMeta consumer streamName groupId = maybeThrow (PC.getLastInGroupMessageMeta consumer streamName groupId)
 
-resendNacs :: Consumer -> Bool -> NominalDiffTime -> Word64 -> IO ()
-resendNacs (Consumer consumer) resend delay = asapo_consumer_set_resend_nacs consumer (if resend then 1 else 0) (nominalDiffToMillis delay)
+-- | Retrieve the last message in a given stream and group, only data
+getLastInGroupMessageData :: Consumer -> StreamName -> GroupId -> IO BS.ByteString
+getLastInGroupMessageData consumer streamName groupId = maybeThrow (PC.getLastInGroupMessageData consumer streamName groupId)
+
+-- | Retrieve the next message in the stream and group, with data and metadata
+getNextMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (MessageMeta, BS.ByteString)
+getNextMessageMetaAndData consumer streamName groupId = maybeThrow (PC.getNextMessageMetaAndData consumer streamName groupId)
+
+-- | Retrieve the next message in the stream and group, only metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getNextMessageMeta :: Consumer -> StreamName -> GroupId -> IO MessageMeta
+getNextMessageMeta consumer streamName groupId = maybeThrow (PC.getNextMessageMeta consumer streamName groupId)
+
+-- | Retrieve the next message in the stream and group, only data
+getNextMessageData :: Consumer -> StreamName -> GroupId -> IO BS.ByteString
+getNextMessageData consumer streamName groupId = maybeThrow (PC.getNextMessageData consumer streamName groupId)
+
+-- | Query messages, return handles without data
+queryMessages ::
+  Consumer ->
+  -- | Actual query string, see the docs for syntax
+  Text ->
+  StreamName ->
+  IO [MessageMeta]
+queryMessages consumer query streamName = maybeThrow (PC.queryMessages consumer query streamName)
+
+-- | Retrieve actual data for the handle
+retrieveDataForMessageMeta :: Consumer -> MessageMeta -> IO BS.ByteString
+retrieveDataForMessageMeta consumer meta = maybeThrow (PC.retrieveDataForMessageMeta consumer meta)

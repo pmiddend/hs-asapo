@@ -2,6 +2,9 @@
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use camelCase" #-}
 
 module Asapo.Raw.Consumer
   ( AsapoConsumerHandle (AsapoConsumerHandle),
@@ -14,6 +17,7 @@ module Asapo.Raw.Consumer
     AsapoConsumerErrorType,
     asapo_stream_infos_get_size,
     asapo_new_message_meta_handle,
+    asapo_free_consumer_handle,
     asapo_free_message_metas_handle,
     asapo_free_id_list_handle,
     kNoData,
@@ -119,8 +123,11 @@ newtype {-# CTYPE "asapo/consumer_c.h" "AsapoMessageMetaHandle" #-} AsapoMessage
 
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoMessageMetasHandle" #-} AsapoMessageMetasHandle = AsapoMessageMetasHandle (Ptr ()) deriving (Storable)
 
+asapo_free_consumer_handle :: AsapoConsumerHandle -> IO ()
+asapo_free_consumer_handle (AsapoConsumerHandle ptr) = with ptr asapo_free_handle
+
 asapo_free_message_metas_handle :: AsapoMessageMetasHandle -> IO ()
-asapo_free_message_metas_handle (AsapoMessageMetasHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_message_metas_handle (AsapoMessageMetasHandle ptr) = with ptr asapo_free_handle
 
 asapo_new_message_meta_handle :: IO AsapoMessageMetaHandle
 asapo_new_message_meta_handle = AsapoMessageMetaHandle <$> asapo_new_handle
@@ -128,7 +135,7 @@ asapo_new_message_meta_handle = AsapoMessageMetaHandle <$> asapo_new_handle
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoIdListHandle" #-} AsapoIdListHandle = AsapoIdListHandle (Ptr ()) deriving (Storable)
 
 asapo_free_id_list_handle :: AsapoIdListHandle -> IO ()
-asapo_free_id_list_handle (AsapoIdListHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
+asapo_free_id_list_handle (AsapoIdListHandle ptr) = with ptr asapo_free_handle
 
 newtype {-# CTYPE "asapo/consumer_c.h" "AsapoDataSetHandle" #-} AsapoDataSetHandle = AsapoDataSetHandle (Ptr ()) deriving (Storable)
 
@@ -326,7 +333,13 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_current_dataset_count
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_beamtime_meta" asapo_consumer_get_beamtime_meta :: AsapoConsumerHandle -> Ptr AsapoErrorHandle -> IO AsapoStringHandle
 
-foreign import capi "asapo/consumer_c.h asapo_consumer_retrieve_data" asapo_consumer_retrieve_data :: AsapoConsumerHandle -> AsapoMessageMetaHandle -> Ptr AsapoMessageDataHandle -> Ptr AsapoErrorHandle -> IO CInt
+foreign import capi "asapo/consumer_c.h asapo_consumer_retrieve_data"
+  asapo_consumer_retrieve_data ::
+    AsapoConsumerHandle ->
+    AsapoMessageMetaHandle ->
+    Ptr AsapoMessageDataHandle ->
+    Ptr AsapoErrorHandle ->
+    IO CInt
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_next_dataset"
   asapo_consumer_get_next_dataset ::

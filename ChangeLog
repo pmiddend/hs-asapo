@@ -1,4 +1,8 @@
+2024-08-16  Philipp Middendorf  <philipp.middendorf@desy.de>
+
+	* Add documentation and high-level bindings
+
 2024-08-08  Philipp Middendorf  <philipp.middendorf@desy.de>
 
-	* Initial release of 1.0.0, just the raw bindings are here
+	* Initial work on 0.9.0, just the raw bindings are here
 

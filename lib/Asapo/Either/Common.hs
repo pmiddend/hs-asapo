@@ -1,7 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Asapo.Common
+module Asapo.Either.Common
   ( SourceType (..),
     InstanceId (..),
     PipelineStep (..),
@@ -31,6 +31,10 @@ module Asapo.Common
   )
 where
 
+-- \|
+-- Description : Utility module with common definitions
+--
+-- You shouldn't need to explicitly import anything from here
 import Asapo.Raw.Common (AsapoSourceCredentialsHandle, AsapoStreamInfoHandle, AsapoStringHandle (AsapoStringHandle), ConstCString, asapo_create_source_credentials, asapo_free_source_credentials, asapo_stream_info_get_finished, asapo_stream_info_get_last_id, asapo_stream_info_get_name, asapo_stream_info_get_next_stream, asapo_stream_info_get_timestamp_created, asapo_stream_info_get_timestamp_last_entry, asapo_string_c_str, kProcessed, kRaw)
 import Control.Applicative (pure)
 import Control.Exception (bracket)

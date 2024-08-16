@@ -13,6 +13,7 @@ module Asapo.Raw.Producer
     AsapoRequestCallback,
     createRequestCallback,
     kMaxMessageSize,
+    asapo_free_producer_handle,
     kNCustomParams,
     kDefaultIngestMode,
     kMaxVersionSize,
@@ -88,7 +89,7 @@ import Asapo.Raw.Common
   )
 import Foreign.C.ConstPtr (ConstPtr (ConstPtr))
 import Foreign.C.String (CString)
-import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar), CULong (CULong))
+import Foreign.C.Types (CInt (CInt), CSize (CSize), CUChar (CUChar))
 import Foreign.Ptr (FunPtr, Ptr, plusPtr)
 import Foreign (with, peekArray)
 import Foreign.Storable (Storable(alignment, peek, peekByteOff, poke, sizeOf))
@@ -97,6 +98,9 @@ import Prelude (error, fromIntegral)
 import Control.Applicative((<*>), pure)
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoProducerHandle" #-} AsapoProducerHandle = AsapoProducerHandle (Ptr ()) deriving (Storable)
+
+asapo_free_producer_handle :: AsapoProducerHandle -> IO ()
+asapo_free_producer_handle (AsapoProducerHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
 newtype {-# CTYPE "asapo/producer_c.h" "AsapoRequestCallbackPayloadHandle" #-} AsapoRequestCallbackPayloadHandle = AsapoRequestCallbackPayloadHandle (Ptr ()) deriving (Storable)
 
