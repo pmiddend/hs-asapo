@@ -63,7 +63,10 @@
         in
         {
           packages.${packageName} =
-            haskellPackages.callCabal2nix packageName self { libasapo-consumer = asapo-core; libasapo-producer = asapo-core; };
+            haskellPackages.callCabal2nix packageName self {
+              libasapo-consumer = asapo-core;
+              libasapo-producer = asapo-core;
+            };
 
           packages.default = self.packages.${system}.${packageName};
 
@@ -84,6 +87,26 @@
                 pkg-config
               ];
               inputsFrom = [ self.packages.${system}.hs-asapo.env ];
+
+              # From https://github.com/ulidtko/cabal-doctest
+              # These environment variables are important. Without these,
+              # doctest doesn't pick up nix's version of ghc, and will fail
+              # claiming it can't find your dependencies
+              shellHook =
+                let
+                  myHaskell = (pkgs.haskellPackages.ghcWithHoogle (p: with p; [
+                    clock
+                    timerep
+                    text
+                    time
+                    bytestring
+                    doctest
+                  ]));
+                in
+                ''
+                  export NIX_GHC=${myHaskell}/bin/ghc
+                  export NIX_GHC_LIBDIR=${myHaskell}/lib/ghc-${haskellPackages.ghc.version}/lib
+                '';
             };
           devShell = self.devShells.${system}.default;
         });

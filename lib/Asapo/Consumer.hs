@@ -11,43 +11,67 @@
 --
 -- = Simple Example
 --
--- Here's some code for a simple consumer (using the @BlockArguments@ extension):
+-- Here's some code for a simple consumer that connects, outputs the available streams, and then gets a specific message by ID with metadata and data:
 --
--- @
--- withConsumer
---   (ServerName "localhost:8040")
---   (SourcePath "")
---   WithoutFilesystem
---   ( SourceCredentials
---       { sourceType = RawSource,
---         instanceId = InstanceId "auto",
---         pipelineStep = PipelineStep "ps1",
---         beamtime = Beamtime "asapo_test",
---         beamline = Beamline "",
---         dataSource = DataSource "asapo_source",
---         token = "token-please-change"
---       }
---   )
---   \\consumer -> do
---     beamtimeMeta <- getBeamtimeMeta consumer
---     putStrLn $ "beamtime metadata: " <> (fromMaybe "N/A" meta)
---
---     forM_ streams \\stream -> do
---       putStrLn $ "=> stream info " <> pack (show stream)
---       streamSize <- getCurrentSize consumer (streamInfoName stream)
---       putStrLn $ "   stream size: " <> pack (show streamSize)
---       datasetCount <- getCurrentDatasetCount consumer (streamInfoName stream) IncludeIncomplete
---       putStrLn $ "   dataset count: " <> pack (show datasetCount)
---
---     meta, data' <- getMessageMetaAndDataById consumer (StreamName "default") (messageIdFromInt 1337)
---     putStrLn $ "meta: " <> pack (show meta)
---     putStrLn $ "data: " <> decodeUtf8 data'
--- @
+-- >>> :seti -XOverloadedStrings
+-- >>> :{
+--  module Main where
+--  import Asapo.Consumer
+--  import Prelude hiding (putStrLn)
+--  import Data.Maybe(fromMaybe)
+--  import Control.Monad(forM_)
+--  import Data.Text(pack)
+--  import Data.Text.IO(putStrLn)
+--  import Data.Text.Encoding(decodeUtf8)
+--  import qualified Data.ByteString as BS
+--  main :: IO ()
+--  main =
+--    withConsumer
+--      (ServerName "localhost:8040")
+--      (SourcePath "")
+--      WithoutFilesystem
+--      ( SourceCredentials
+--        { sourceType = RawSource,
+--          instanceId = InstanceId "auto",
+--          pipelineStep = PipelineStep "ps1",
+--          beamtime = Beamtime "asapo_test",
+--          beamline = Beamline "",
+--          dataSource = DataSource "asapo_source",
+--          token = Token "token-please-change"
+--        }
+--      ) $ \consumer -> do
+--        beamtimeMeta <- getBeamtimeMeta consumer
+--        putStrLn $ "beamtime metadata: " <> (fromMaybe "N/A" beamtimeMeta)
+--        streams <- getStreamList consumer Nothing FilterAllStreams
+--        forM_ streams $ \stream -> do
+--          putStrLn $ "=> stream info " <> pack (show stream)
+--          streamSize <- getCurrentSize consumer (streamInfoName stream)
+--          putStrLn $ "   stream size: " <> pack (show streamSize)
+--          datasetCount <- getCurrentDatasetCount consumer (streamInfoName stream) IncludeIncomplete
+--          putStrLn $ "   dataset count: " <> pack (show datasetCount)
+--        metaAndData <- getMessageMetaAndDataById consumer (StreamName "default") (messageIdFromInt 1337)
+--        putStrLn $ "meta: " <> pack (show (fst metaAndData))
+--        putStrLn $ "data: " <> decodeUtf8 (snd metaAndData)
+-- :}
 module Asapo.Consumer
-  ( SomeConsumerException,
+  ( -- * Error types
+    SomeConsumerException,
     NoData,
+    EndOfStream,
+    StreamFinished,
+    UnavailableService,
+    InterruptedTransaction,
+    LocalIOError,
+    WrongInput,
+    PartialData,
+    UnsupportedClient,
+    DataNotInCache,
+    UnknownError,
+
+    -- * Types
     Consumer,
     Dataset (..),
+    MessageMetaHandle,
     DeleteFlag (..),
     ErrorOnNotExistFlag (..),
     ErrorType (ErrorNoData),
@@ -64,44 +88,50 @@ module Asapo.Consumer
     SourcePath (..),
     SourceType (..),
     StreamName (..),
-    messageIdFromInt,
     InstanceId (..),
     Token (..),
     StreamFilter (..),
     SourceCredentials (..),
+
+    -- * Initialization
     withConsumer,
     withGroupId,
-    setTimeout,
-    retrieveDataForMessageMeta,
-    resetLastReadMarker,
-    setLastReadMarker,
-    acknowledge,
-    negativeAcknowledge,
-    getUnacknowledgedMessages,
-    getCurrentConnectionType,
-    getStreamList,
-    deleteStream,
-    setStreamPersistent,
+
+    -- * Getters
     getCurrentSize,
     getCurrentDatasetCount,
     getBeamtimeMeta,
     getNextDataset,
     getLastDataset,
     getLastDatasetInGroup,
-    resendNacs,
-    queryMessages,
     getMessageMetaAndDataById,
     getMessageMetaById,
     getMessageDataById,
+    getNextMessageMetaAndData,
+    getNextMessageMeta,
+    getNextMessageData,
     getLastMessageMetaAndData,
     getLastMessageMeta,
     getLastMessageData,
     getLastInGroupMessageMetaAndData,
     getLastInGroupMessageMeta,
     getLastInGroupMessageData,
-    getNextMessageMetaAndData,
-    getNextMessageMeta,
-    getNextMessageData,
+    getUnacknowledgedMessages,
+    getCurrentConnectionType,
+    getStreamList,
+    messageIdFromInt,
+    queryMessages,
+    retrieveDataForMessageMeta,
+
+    -- * Modifiers
+    resetLastReadMarker,
+    setTimeout,
+    setLastReadMarker,
+    setStreamPersistent,
+    acknowledge,
+    negativeAcknowledge,
+    deleteStream,
+    resendNacs,
   )
 where
 
@@ -130,6 +160,7 @@ import Asapo.Either.Consumer
     GroupId,
     IncludeIncompleteFlag (..),
     MessageMeta (..),
+    MessageMetaHandle,
     ServerName (..),
     SourcePath (..),
     StreamFilter (..),
@@ -154,7 +185,22 @@ import System.IO (IO)
 import Text.Show (Show, show)
 import Prelude ()
 
-data SomeConsumerException = forall e. (Exception e) => SomeConsumerException e
+-- $setup
+-- >>> :seti -XOverloadedStrings
+-- >>> import Control.Exception(catch)
+-- >>> import Prelude(undefined, (<>), error)
+-- >>> import Data.Text.IO(putStrLn)
+-- >>> import Data.Text(pack)
+-- >>> let consumer = undefined
+
+-- | Parent class for all consumer-related exceptions. This makes catchall possible, as in...
+--
+-- @
+-- setStreamPersistent consumer (StreamName "default")
+--   `catch` (\e -> error ("Caught " <> (show (e :: SomeConsumerException))))
+-- @
+data SomeConsumerException
+  = forall e. (Exception e) => SomeConsumerException e
 
 instance Show SomeConsumerException where
   show (SomeConsumerException e) = show e

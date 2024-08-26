@@ -527,6 +527,7 @@ send (Producer producer) messageId fileName metadata datasetSubstream datasetSiz
 sendFile ::
   Producer ->
   MessageId ->
+  -- | File name to put into the message header
   FileName ->
   Metadata ->
   DatasetSubstream ->
@@ -534,6 +535,7 @@ sendFile ::
   AutoIdFlag ->
   -- | Size
   Int ->
+  -- | File to actually send
   FileName ->
   TransferFlag ->
   StorageFlag ->
@@ -648,11 +650,11 @@ convertLogLevel _ = asapoLogLevelWarning
 setLogLevel :: Producer -> LogLevel -> IO ()
 setLogLevel (Producer producer) logLevel = asapo_producer_set_log_level producer (convertLogLevel logLevel)
 
--- | Enable the local log
+-- | Enable/Disable logging to stdout
 enableLocalLog :: Producer -> Bool -> IO ()
 enableLocalLog (Producer producer) enable = asapo_producer_enable_local_log producer (if enable then 1 else 0)
 
--- | Enable the remote log
+-- | Enable/Disable logging to the central server
 enableRemoteLog :: Producer -> Bool -> IO ()
 enableRemoteLog (Producer producer) enable = asapo_producer_enable_remote_log producer (if enable then 1 else 0)
 
@@ -661,16 +663,22 @@ setCredentials :: Producer -> SourceCredentials -> IO (Either Error Int)
 setCredentials (Producer producer) credentials = withCredentials credentials \credentialsHandle ->
   (fromIntegral <$>) <$> checkError (asapo_producer_set_credentials producer credentialsHandle)
 
--- | Get the request queue size
+-- | Get current size of the requests queue (number of requests pending/being processed)
 getRequestsQueueSize :: Producer -> IO Int
 getRequestsQueueSize (Producer producer) = fromIntegral <$> asapo_producer_get_requests_queue_size producer
 
--- | Get the request queue volume in MiB
+-- | Get current volume of the requests queue (total memory of occupied by pending/being processed requests)
 getRequestsQueueVolumeMb :: Producer -> IO Int
 getRequestsQueueVolumeMb (Producer producer) = fromIntegral <$> asapo_producer_get_requests_queue_volume_mb producer
 
--- | Set different request queue limits
-setRequestsQueueLimits :: Producer -> Int -> Int -> IO ()
+-- | Set maximum size of the requests queue
+setRequestsQueueLimits ::
+  Producer ->
+  -- | Size (0 for unlimited)
+  Int ->
+  -- | Volume (in MiB; 0 for unlimited)
+  Int ->
+  IO ()
 setRequestsQueueLimits (Producer producer) size volume =
   asapo_producer_set_requests_queue_limits producer (fromIntegral size) (fromIntegral volume)
 

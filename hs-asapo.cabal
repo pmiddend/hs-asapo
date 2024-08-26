@@ -10,7 +10,7 @@ maintainer:     philipp.middendorf@desy.de
 copyright:      2024 Philipp Middendorf
 license:        MIT
 license-file:   LICENSE
-build-type:     Simple
+build-type:     Custom
 extra-source-files: ChangeLog
 description:
   Haskell bindings for ASAP:O, a middleware platform for high-performance data analysis. Some general notes about this project:
@@ -27,7 +27,12 @@ source-repository head
 
 common warnings
     ghc-options: -Weverything -Wno-missing-safe-haskell-mode -Wno-unsafe -Wno-missing-deriving-strategies -Wno-all-missed-specialisations -Wno-monomorphism-restriction -Wno-safe -Wno-missing-local-signatures -Wno-prepositive-qualified-module -Wno-missing-kind-signatures -Wno-missed-specializations
-    
+
+custom-setup
+  setup-depends:
+      base < 5
+    , cabal-doctest >= 1.0.9 && <1.1
+
 library
   import: warnings
   exposed-modules: Asapo.Raw.Common
@@ -85,3 +90,19 @@ benchmark simple-consumer
     , time >= 1.12.2 && < 1.13
     , optparse-applicative
     
+-- copied from https://github.com/ulidtko/cabal-doctest
+test-suite doctests
+  type:             exitcode-stdio-1.0
+  main-is:          doctests.hs
+  build-depends:
+      base >=4.7 && <5
+    , doctest >=0.15   && <1
+    , clock >= 0.8.4 && < 0.9
+    , timerep >= 2.1.0 && < 2.2
+    , time >= 1.12.2 && < 1.13
+    , bytestring  >= 0.11.5 && < 0.12
+    , text >= 2.0.2 && < 2.1
+    , hs-asapo
+
+  ghc-options:      -Wall -threaded
+  hs-source-dirs:   tests

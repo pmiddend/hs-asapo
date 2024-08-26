@@ -7,9 +7,71 @@
 -- To implement an ASAP:O producer, you should only need this interface.
 -- It exposes no memory-management functions (like free) or pointers, and
 -- is thus safe to use.
+--
+-- = Simple Example
+--
+-- Here's some code for a simple producer that connects and sends a message with id "1".
+--
+-- >>> :seti -XOverloadedStrings
+-- >>> :{
+--  import Asapo.Producer
+--  import Control.Applicative (Applicative ((<*>)))
+--  import Control.Monad(void)
+--  import Data.Either (Either (Left, Right))
+--  import Data.Function (($))
+--  import Data.Functor ((<$>))
+--  import Data.Semigroup (Semigroup ((<>)))
+--  import Data.Text (Text, pack)
+--  import Data.Text.Encoding (encodeUtf8)
+--  import qualified Data.Text.IO as TIO
+--  import Data.Time.Clock (secondsToNominalDiffTime)
+--  import Data.Word (Word64)
+--  import System.IO (IO)
+--  import Text.Show (Show (show))
+--  import Prelude ()
+--  main :: IO ()
+--  main =
+--    withProducer
+--      (Endpoint "localhost:8400")
+--      (ProcessingThreads 1)
+--      TcpHandler
+--      ( SourceCredentials
+--          { sourceType = RawSource,
+--            instanceId = InstanceId "test_instance",
+--            pipelineStep = PipelineStep "pipeline_step_1",
+--            beamtime = Beamtime "asapo_test",
+--            beamline = Beamline "auto",
+--            dataSource = DataSource "asapo_source",
+--            token = Token "sometoken"
+--          }
+--      )
+--      (secondsToNominalDiffTime 10) $ \producer -> do
+--        TIO.putStrLn "connected, sending data"
+--        let responseHandler :: RequestResponse -> IO ()
+--            responseHandler requestResponse =
+--              TIO.putStrLn $ "in response handler, payload "
+--                <> responsePayload requestResponse
+--                <> ", error "
+--                <> pack (show (responseError requestResponse))
+--        send
+--          producer
+--          (MessageId 1)
+--          (FileName "raw/default/1.txt")
+--          (Metadata "{\"test\": 3.0}")
+--          (DatasetSubstream 0)
+--          (DatasetSize 0)
+--          NoAutoId
+--          (encodeUtf8 "test")
+--          DataAndMetadata
+--          FilesystemAndDatabase
+--          (StreamName "default")
+--          responseHandler
+--        void $ waitRequestsFinished producer (secondsToNominalDiffTime 10)
+-- :}
 module Asapo.Producer
-  ( Endpoint (..),
+  ( -- * Types
     ProducerException (..),
+    Endpoint (..),
     ProcessingThreads (..),
     RequestHandlerType (..),
     Error (..),
@@ -27,7 +89,6 @@ module Asapo.Producer
     StreamInfo (..),
     SourceType (..),
     StreamName (..),
-    messageIdFromInt,
     InstanceId (..),
     Token (..),
     DatasetSubstream (..),
@@ -41,25 +102,32 @@ module Asapo.Producer
     RequestResponse (..),
     Opcode (..),
     GenericRequestHeader (..),
+
+    -- * Initialization
     withProducer,
+
+    -- * Getters
     getVersionInfo,
     getStreamInfo,
     getLastStream,
-    send,
-    deleteStream,
     getBeamtimeMeta,
     getStreamMeta,
+    getRequestsQueueSize,
+    getRequestsQueueVolumeMb,
+
+    -- * Modifiers
+    send,
     sendFile,
     sendStreamFinishedFlag,
     sendBeamtimeMetadata,
     sendStreamMetadata,
+    deleteStream,
     setLogLevel,
     enableLocalLog,
     enableRemoteLog,
     setCredentials,
-    getRequestsQueueSize,
-    getRequestsQueueVolumeMb,
     setRequestsQueueLimits,
+    messageIdFromInt,
     waitRequestsFinished,
   )
 where
@@ -202,6 +270,7 @@ send ::
   DatasetSubstream ->
   DatasetSize ->
   AutoIdFlag ->
+  -- | Actual data to send
   BS.ByteString ->
   TransferFlag ->
   StorageFlag ->
@@ -215,6 +284,7 @@ send producer messageId fileName metadata datasetSubstream datasetSize autoIdFla
 sendFile ::
   Producer ->
   MessageId ->
+  -- | File name to put into the message header
   FileName ->
   Metadata ->
   DatasetSubstream ->
@@ -222,6 +292,7 @@ sendFile ::
   AutoIdFlag ->
   -- | Size
   Int ->
+  -- | File to actually send
   FileName ->
   TransferFlag ->
   StorageFlag ->

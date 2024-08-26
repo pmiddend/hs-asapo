@@ -20,6 +20,7 @@ module Asapo.Either.Consumer
     ErrorOnNotExistFlag (..),
     Consumer,
     StreamFilter (..),
+    MessageMetaHandle,
     GroupId,
     Error (..),
     ErrorType (..),
@@ -100,7 +101,7 @@ newtype SourcePath = SourcePath Text
 -- | Whether to use the filesystem or do it in-memory
 data FilesystemFlag = WithFilesystem | WithoutFilesystem deriving (Eq)
 
--- | Wrapper around a consumer handle
+-- | Wrapper around a consumer handle. Create with the @withConsumer@ function(s).
 newtype Consumer = Consumer AsapoConsumerHandle
 
 data ErrorType
@@ -203,7 +204,7 @@ withGroupId (Consumer consumerHandle) onError onSuccess = bracket createGroupId 
 setTimeout :: Consumer -> NominalDiffTime -> IO ()
 setTimeout (Consumer consumerHandle) timeout = asapo_consumer_set_timeout consumerHandle (nominalDiffToMillis timeout)
 
--- | Reset the last read marker for the stream
+-- | Reset the last read marker for a specific group
 resetLastReadMarker :: Consumer -> GroupId -> StreamName -> IO (Either Error Int)
 resetLastReadMarker (Consumer consumer) (GroupId groupId) (StreamName streamName) =
   withConstText streamName \streamNameC -> (fromIntegral <$>) <$> checkError (asapo_consumer_reset_last_read_marker consumer groupId streamNameC)
@@ -279,7 +280,12 @@ repeatGetterWithSizeLimit f n
   | otherwise = traverse f [0 .. n - 1]
 
 -- | Retrieve the list of streams with metadata
-getStreamList :: Consumer -> Maybe StreamName -> StreamFilter -> IO (Either Error [StreamInfo])
+getStreamList ::
+  Consumer ->
+  -- | Pass @Nothing@ to get all streams
+  Maybe StreamName ->
+  StreamFilter ->
+  IO (Either Error [StreamInfo])
 getStreamList (Consumer consumer) streamName filter = bracket init destroy handle
   where
     init =
@@ -357,7 +363,7 @@ getCurrentDatasetCount (Consumer consumer) (StreamName streamName) inludeIncompl
 getBeamtimeMeta :: Consumer -> IO (Either Error (Maybe Text))
 getBeamtimeMeta (Consumer consumer) = checkError (asapo_consumer_get_beamtime_meta consumer) >>= traverse stringHandleToText
 
--- | Metadata handle, can be passed around as a pure value and be used to retrieve actual data for the metadata as a two-step process
+-- | Metadata handle, can be passed around as a pure value and be used to retrieve actual data for the metadata as a two-step process, using the @retrieveDataForMessageMeta@ function(s)
 newtype MessageMetaHandle = MessageMetaHandle (ForeignPtr ()) deriving (Show)
 
 withMessageMetaHandle :: MessageMetaHandle -> (AsapoMessageMetaHandle -> IO a) -> IO a
@@ -429,7 +435,7 @@ retrieveDatasetFromC handle = do
 getNextDataset ::
   Consumer ->
   GroupId ->
-  -- | minimum size
+  -- | Wait until dataset has these number of messages (0 for maximum size)
   Word64 ->
   StreamName ->
   IO (Either Error Dataset)
@@ -439,7 +445,7 @@ getNextDataset (Consumer consumer) (GroupId groupId) minSize (StreamName streamN
 -- | Get the last dataset in the stream
 getLastDataset ::
   Consumer ->
-  -- | minimum size
+  -- | Wait until dataset has these number of messages (0 for maximum size)
   Word64 ->
   StreamName ->
   IO (Either Error Dataset)
@@ -450,7 +456,7 @@ getLastDataset (Consumer consumer) minSize (StreamName streamName) = withConstTe
 getLastDatasetInGroup ::
   Consumer ->
   GroupId ->
-  -- | minimum size
+  -- | Wait until dataset has these number of messages (0 for maximum size)
   Word64 ->
   StreamName ->
   IO (Either Error Dataset)
