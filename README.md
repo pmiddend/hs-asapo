@@ -4,8 +4,8 @@ These are bindings for DESY’s [ASAP:O](https://gitlab.desy.de/asapo/asapo), a 
 
 ## Docs
 
-The raw C bindings are located in `lib/Asapo/Raw/*` and are hand-written. A high-level interface will be located in `lib/Asapo/Consumer.hs` and `lib/asapo/Producer.hs`. You should use the latter in your code once it's there.
+Documentation is on [hackage](https://hackage.haskell.org/package/hs-asapo).
 
 ## Supported
 
-Currently, a few select functions are supported, and only in C form. More to come.
+All functions exposd by the ASAP:O C interface are supported, with varying levels of testedness.
