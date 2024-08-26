@@ -11,6 +11,7 @@ module Asapo.Raw.Common
     AsapoSourceCredentialsHandle (AsapoSourceCredentialsHandle),
     AsapoMessageDataHandle (AsapoMessageDataHandle),
     asapo_is_error,
+    AsapoSourceType,
     asapo_string_c_str,
     mkAsapoFreeWrapper,
     asapo_message_data_get_as_chars,

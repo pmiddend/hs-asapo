@@ -19,6 +19,7 @@ module Asapo.Either.Consumer
     DeleteFlag (..),
     ErrorOnNotExistFlag (..),
     Consumer,
+    NetworkConnectionType (..),
     StreamFilter (..),
     MessageMetaHandle,
     GroupId,

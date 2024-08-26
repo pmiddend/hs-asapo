@@ -92,6 +92,7 @@ module Asapo.Consumer
     Token (..),
     StreamFilter (..),
     SourceCredentials (..),
+    NetworkConnectionType (..),
 
     -- * Initialization
     withConsumer,
@@ -161,6 +162,7 @@ import Asapo.Either.Consumer
     IncludeIncompleteFlag (..),
     MessageMeta (..),
     MessageMetaHandle,
+    NetworkConnectionType (..),
     ServerName (..),
     SourcePath (..),
     StreamFilter (..),
