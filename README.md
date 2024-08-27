@@ -1,5 +1,7 @@
 # hs-asapo - Haskell bindings to ASAP:O
 
+[![CI](https://github.com/pmiddend/hs-asapo/actions/workflows/build-with-nix.yaml/badge.svg)](https://github.com/pmiddend/hs-asapo/actions/workflows/build-with-nix.yaml)
+
 These are bindings for DESY’s [ASAP:O](https://gitlab.desy.de/asapo/asapo), a middleware platform for high-performance data analysis.
 
 ## Docs
