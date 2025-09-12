@@ -1,3 +1,9 @@
+2025-09-12  Philipp Middendorf  <philipp.middendorf@desy.de>
+
+	* Fix memory issue when sending raw data
+	* Update to latest asapo version
+	* Make consumer a bit more powerful
+
 2024-08-16  Philipp Middendorf  <philipp.middendorf@desy.de>
 
 	* Add documentation and high-level bindings
