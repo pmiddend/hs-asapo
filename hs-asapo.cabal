@@ -1,6 +1,6 @@
 cabal-version:  3.4
 name:           hs-asapo
-version:        0.9.0
+version:        0.9.1
 synopsis:       Haskell bindings for ASAP:O
 category:       System, FFI, Distributed Computing
 homepage:       https://github.com/pmiddend/hs-asapo
@@ -59,6 +59,7 @@ library
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
   hs-source-dirs:    lib
+  default-language:  Haskell2010
 
 -- Marked as "benchmark" so the dependencies on hackage are accurate
 benchmark simple-producer
@@ -74,6 +75,7 @@ benchmark simple-producer
     , text >= 2.0.2 && < 2.2
     , time >= 1.12.2 && < 1.13
     , optparse-applicative >= 0.18.1 && < 0.19
+  default-language:  Haskell2010
     
 -- Marked as "benchmark" so the dependencies on hackage are accurate
 benchmark simple-consumer
@@ -89,6 +91,7 @@ benchmark simple-consumer
     , text >= 2.0.2 && < 2.2
     , time >= 1.12.2 && < 1.13
     , optparse-applicative
+  default-language:  Haskell2010
     
 -- copied from https://github.com/ulidtko/cabal-doctest
 test-suite doctests
@@ -106,3 +109,4 @@ test-suite doctests
 
   ghc-options:      -Wall -threaded
   hs-source-dirs:   tests
+  default-language:  Haskell2010

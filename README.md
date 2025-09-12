@@ -13,3 +13,5 @@ Documentation is on [hackage](https://hackage.haskell.org/package/hs-asapo).
 ## Supported
 
 All functions exposd by the ASAP:O C interface are supported, with varying levels of testedness.
+
+Tested with **asapo-25.03.0** and **ghc-9.8**.
