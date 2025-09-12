@@ -6,7 +6,7 @@
   description = "hs-asapo";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-24.05";
+    nixpkgs.url = "nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -29,11 +29,11 @@
           asapo-core = with pkgs; stdenv.mkDerivation rec {
             pname = "asapo";
 
-            version = "23.11.1";
+            version = "25.03.0";
 
             src = fetchurl {
               url = "https://gitlab.desy.de/asapo/asapo/-/archive/${version}/asapo-${version}.tar.gz";
-              hash = "sha256-eEKYEjGkUIIsOEjKDWg+4SnqtHTMSDak6lnyxnWI1FU=";
+              hash = "sha256-DzqjHU4iqunrPTNV22D7FHZTBNzTh1A75qxfc2/VHBE=";
             };
 
             nativeBuildInputs = [ cmake ];
@@ -43,9 +43,8 @@
               rdkafka
               mongoc
               cyrus_sasl
+              # Python is not strictly needed, but the build wants it present.
               python3
-              python3Packages.cython
-              python3Packages.numpy
             ];
 
             cmakeFlags = [
@@ -58,7 +57,7 @@
             # Currently, asapo needs git to evaluate the current branch, which
             # doesn't work when you have a tar file as the source.
             # patches = [ ./remove-git-references.patch ./fix-kDefaultIngestMode.patch ];
-            patches = [ ./remove-git-references.patch ];
+            patches = [ ./remove-git-references.patch ./fix-gcc-14.patch ];
           };
         in
         {

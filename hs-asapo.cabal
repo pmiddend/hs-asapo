@@ -46,7 +46,7 @@ library
                  , Asapo.Consumer
   build-depends:
       base >=4.7 && <5
-    , text >= 2.0.2 && < 2.1
+    , text >= 2.0.2 && < 2.2
     -- for timespec data type (is Storable)
     , clock >= 0.8.4 && < 0.9
     -- for higher-level UTCTime/LocalTime
@@ -54,7 +54,7 @@ library
     -- for RFC3339
     , timerep >= 2.1.0 && < 2.2
     -- for the HL interface to send
-    , bytestring  >= 0.11.5 && < 0.12
+    , bytestring  >= 0.11.5 && < 0.13
 
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
@@ -71,7 +71,7 @@ benchmark simple-producer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
-    , text >= 2.0.2 && < 2.1
+    , text >= 2.0.2 && < 2.2
     , time >= 1.12.2 && < 1.13
     , optparse-applicative >= 0.18.1 && < 0.19
     
@@ -86,7 +86,7 @@ benchmark simple-consumer
   build-depends:
       base >=4.7 && <5
     , hs-asapo
-    , text >= 2.0.2 && < 2.1
+    , text >= 2.0.2 && < 2.2
     , time >= 1.12.2 && < 1.13
     , optparse-applicative
     
@@ -100,8 +100,8 @@ test-suite doctests
     , clock >= 0.8.4 && < 0.9
     , timerep >= 2.1.0 && < 2.2
     , time >= 1.12.2 && < 1.13
-    , bytestring  >= 0.11.5 && < 0.12
-    , text >= 2.0.2 && < 2.1
+    , bytestring  >= 0.11.5 && < 0.13
+    , text >= 2.0.2 && < 2.2
     , hs-asapo
 
   ghc-options:      -Wall -threaded

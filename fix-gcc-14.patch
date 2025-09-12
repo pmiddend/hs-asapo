@@ -1,0 +1,16 @@
+diff --git a/3d_party/rapidjson/include/rapidjson/document.h b/3d_party/rapidjson/include/rapidjson/document.h
+index 8988ca6a..9b4b5cea 100644
+--- a/3d_party/rapidjson/include/rapidjson/document.h
++++ b/3d_party/rapidjson/include/rapidjson/document.h
+@@ -368,10 +368,7 @@ struct GenericStringRef {
+ 
+     GenericStringRef(const GenericStringRef& rhs) : s(rhs.s), length(rhs.length) {}
+ 
+-    GenericStringRef& operator=(const GenericStringRef& rhs) {
+-        s = rhs.s;
+-        length = rhs.length;
+-    }
++    GenericStringRef& operator=(const GenericStringRef& rhs) = delete;
+ 
+     //! implicit conversion to plain CharType pointer
+     operator const Ch* () const {

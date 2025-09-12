@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -119,8 +120,8 @@ import Control.Applicative (Applicative (pure))
 import Control.Exception (bracket)
 import Data.Bits ((.|.))
 import Data.Bool (Bool)
-import qualified Data.ByteString as BS
-import Data.ByteString.Unsafe (unsafeUseAsCString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Internal qualified as BSI
 import Data.Either (Either (Left, Right))
 import Data.Eq (Eq ((==)))
 import Data.Foldable (Foldable (elem))
@@ -130,9 +131,10 @@ import Data.Maybe (Maybe (Just, Nothing))
 import Data.Ord ((>))
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
-import Data.Word (Word64)
+import Data.Word (Word64, Word8)
 import Foreign (Storable (peek), alloca, castPtr)
 import Foreign.C.ConstPtr (ConstPtr (unConstPtr))
+import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Ptr (Ptr)
 import System.IO (IO)
 import Text.Show (Show)
@@ -472,8 +474,14 @@ data RequestResponse = RequestResponse
     responseError :: Maybe Error
   }
 
-sendRequestCallback :: (RequestResponse -> IO ()) -> Ptr () -> AsapoRequestCallbackPayloadHandle -> AsapoErrorHandle -> IO ()
-sendRequestCallback simpleCallback _data payloadHandle errorHandle = do
+sendRequestCallback ::
+  (RequestResponse -> IO ()) ->
+  Maybe (ForeignPtr Word8) ->
+  Ptr () ->
+  AsapoRequestCallbackPayloadHandle ->
+  AsapoErrorHandle ->
+  IO ()
+sendRequestCallback simpleCallback _dataAsForeignPtr _data payloadHandle errorHandle = do
   payloadText <- bracket (asapo_request_callback_payload_get_response payloadHandle) asapo_free_string_handle stringHandleToTextUnsafe
   originalHeaderCPtr <- asapo_request_callback_payload_get_original_header payloadHandle
   originalHeaderC <- peek (unConstPtr originalHeaderCPtr)
@@ -481,7 +489,10 @@ sendRequestCallback simpleCallback _data payloadHandle errorHandle = do
   errorHandle' <- checkErrorWithGivenHandle errorHandle ()
   case errorHandle' of
     Left e -> simpleCallback (RequestResponse payloadText originalHeader (Just e))
-    _ -> simpleCallback (RequestResponse payloadText originalHeader Nothing)
+    Right _ -> simpleCallback (RequestResponse payloadText originalHeader Nothing)
+
+toJustForeignPtr :: (a, b, c) -> a
+toJustForeignPtr (p, _offset, _length) = p
 
 -- | Send a message containing raw data. Due to newtype and enum usage, all parameter should be self-explanatory
 send ::
@@ -507,21 +518,30 @@ send (Producer producer) messageId fileName metadata datasetSubstream datasetSiz
     datasetSize
     autoIdFlag
     (BS.length data')
-    \messageHeaderHandle ->
-      unsafeUseAsCString data' \data'' -> withConstText stream \streamC -> do
-        requestCallback <- createRequestCallback (sendRequestCallback callback)
-        ( fromIntegral
-            <$>
-          )
-          <$> checkError
-            ( asapo_producer_send
-                producer
-                messageHeaderHandle
-                (castPtr data'')
-                (convertSendFlags transferFlag storageFlag)
-                streamC
-                requestCallback
+    \messageHeaderHandle -> do
+      withConstText stream \streamC -> do
+        let word8Ptr :: ForeignPtr Word8
+            word8Ptr = toJustForeignPtr (BSI.toForeignPtr data')
+        requestCallback <-
+          createRequestCallback
+            ( sendRequestCallback
+                callback
+                -- We pass this ptr to the callback to keep the GC from collecting it
+                (Just word8Ptr)
             )
+        withForeignPtr word8Ptr \dataPtr ->
+          ( fromIntegral
+              <$>
+          )
+            <$> checkError
+              ( asapo_producer_send
+                  producer
+                  messageHeaderHandle
+                  (castPtr dataPtr)
+                  (convertSendFlags transferFlag storageFlag)
+                  streamC
+                  requestCallback
+              )
 
 -- | Send a message containing a file. Due to newtype and enum usage, all parameter should be self-explanatory
 sendFile ::
@@ -553,7 +573,7 @@ sendFile (Producer producer) messageId fileName meta datasetSubstream datasetSiz
     size
     \messageHeaderHandle ->
       withConstText fileNameToSend \fileNameToSendC -> withConstText stream \streamC -> do
-        requestCallback <- createRequestCallback (sendRequestCallback callback)
+        requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
         ( fromIntegral
             <$>
           )
@@ -570,7 +590,7 @@ sendFile (Producer producer) messageId fileName meta datasetSubstream datasetSiz
 -- | As the title says, send the "stream finished" flag
 sendStreamFinishedFlag :: Producer -> StreamName -> MessageId -> StreamName -> (RequestResponse -> IO ()) -> IO (Either Error Int)
 sendStreamFinishedFlag (Producer producer) (StreamName stream) (MessageId lastId) (StreamName nextStream) callback = do
-  requestCallback <- createRequestCallback (sendRequestCallback callback)
+  requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
   withConstText stream \streamC -> withConstText nextStream \nextStreamC ->
     (fromIntegral <$>)
       <$> checkError
@@ -589,7 +609,7 @@ data UpsertMode = UseUpsert | NoUpsert
 -- | Send or extend beamtime metadata
 sendBeamtimeMetadata :: Producer -> Metadata -> MetadataIngestMode -> UpsertMode -> (RequestResponse -> IO ()) -> IO (Either Error Int)
 sendBeamtimeMetadata (Producer producer) (Metadata metadata) ingestMode upsertMode callback = do
-  requestCallback <- createRequestCallback (sendRequestCallback callback)
+  requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
   (fromIntegral <$>)
     <$> withConstText metadata \metadataC ->
       checkError
@@ -611,7 +631,7 @@ sendBeamtimeMetadata (Producer producer) (Metadata metadata) ingestMode upsertMo
 -- | Send or extend stream metadata
 sendStreamMetadata :: Producer -> Metadata -> MetadataIngestMode -> UpsertMode -> StreamName -> (RequestResponse -> IO ()) -> IO (Either Error Int)
 sendStreamMetadata (Producer producer) (Metadata metadata) ingestMode upsertMode (StreamName stream) callback = do
-  requestCallback <- createRequestCallback (sendRequestCallback callback)
+  requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
   (fromIntegral <$>)
     <$> withConstText metadata \metadataC -> withConstText stream \streamC ->
       checkError

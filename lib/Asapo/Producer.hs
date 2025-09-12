@@ -278,7 +278,7 @@ send ::
   (RequestResponse -> IO ()) ->
   IO Int
 send producer messageId fileName metadata datasetSubstream datasetSize autoIdFlag data' transferFlag storageFlag stream callback =
-  maybeThrow (PlainProducer.send producer messageId fileName metadata datasetSubstream datasetSize autoIdFlag data' transferFlag storageFlag stream callback)
+  maybeThrow (PlainProducer.send producer messageId fileName metadata datasetSubstream datasetSize autoIdFlag (data') transferFlag storageFlag stream callback)
 
 -- | Send a message containing a file. Due to newtype and enum usage, all parameter should be self-explanatory
 sendFile ::
