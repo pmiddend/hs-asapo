@@ -35,6 +35,8 @@ module Asapo.Either.Producer
     setRequestsQueueLimits,
     checkError,
     checkErrorWithGivenHandle,
+    createProducer,
+    freeProducer,
     withProducer,
     enableLocalLog,
     waitRequestsFinished,
@@ -186,21 +188,28 @@ checkError f = do
     (errorHandlePtr, result) <- withPtr errorHandle f
     checkErrorWithGivenHandle errorHandlePtr result
 
-create :: Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> NominalDiffTime -> IO (Either Error AsapoProducerHandle)
-create (Endpoint endpoint) (ProcessingThreads processingThreads) handlerType sourceCredentials timeout = do
+-- | Create a producer and return a handle. The caller must call 'freeProducer' after finishing using the handle. See 'withProducer' for a safer version
+createProducer :: Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> NominalDiffTime -> IO (Either Error Producer)
+createProducer (Endpoint endpoint) (ProcessingThreads processingThreads) handlerType sourceCredentials timeout = do
   withCredentials sourceCredentials \credentials' ->
     let convertHandlerType TcpHandler = kTcp
         convertHandlerType FilesystemHandler = kFilesystem
      in do
           withText endpoint \endpoint' -> do
-            checkError
-              ( asapo_create_producer
-                  endpoint'
-                  (fromIntegral processingThreads)
-                  (convertHandlerType handlerType)
-                  credentials'
-                  (nominalDiffToMillis timeout)
-              )
+            -- first <$> to go into IO, second <$> to go into the Either
+            (Producer <$>)
+              <$> checkError
+                ( asapo_create_producer
+                    endpoint'
+                    (fromIntegral processingThreads)
+                    (convertHandlerType handlerType)
+                    credentials'
+                    (nominalDiffToMillis timeout)
+                )
+
+-- | Free the producer handle. This function is only useful in tandem with 'createProducer'
+freeProducer :: Producer -> IO ()
+freeProducer (Producer p) = asapo_free_producer_handle p
 
 -- | Create a producer and do something with it. This is the main entrypoint into the producer
 withProducer ::
@@ -214,14 +223,14 @@ withProducer ::
   (Error -> IO a) ->
   (Producer -> IO a) ->
   IO a
-withProducer endpoint processingThreads handlerType sourceCredentials timeout onError onSuccess = bracket (create endpoint processingThreads handlerType sourceCredentials timeout) freeProducer handle
+withProducer endpoint processingThreads handlerType sourceCredentials timeout onError onSuccess = bracket (createProducer endpoint processingThreads handlerType sourceCredentials timeout) freeProducer' handle
   where
-    freeProducer :: Either Error AsapoProducerHandle -> IO ()
-    freeProducer (Left _) = pure ()
-    freeProducer (Right producerHandle) = asapo_free_producer_handle producerHandle
-    handle :: Either Error AsapoProducerHandle -> IO a
+    freeProducer' :: Either Error Producer -> IO ()
+    freeProducer' (Left _) = pure ()
+    freeProducer' (Right producerHandle) = freeProducer producerHandle
+    handle :: Either Error Producer -> IO a
     handle (Left e) = onError e
-    handle (Right v) = onSuccess (Producer v)
+    handle (Right v) = onSuccess v
 
 withStringHandle :: (AsapoStringHandle -> IO c) -> IO c
 withStringHandle = bracket asapo_new_string_handle asapo_free_string_handle

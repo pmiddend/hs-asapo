@@ -94,7 +94,9 @@ module Asapo.Consumer
     SourceCredentials (..),
     NetworkConnectionType (..),
 
-    -- * Initialization
+    -- * Initialization/finalization
+    createConsumer,
+    freeConsumer,
     withConsumer,
     withGroupId,
 
@@ -295,6 +297,18 @@ errorTypeToException ErrorPartialData = throw . PartialData
 errorTypeToException ErrorUnsupportedClient = throw . UnsupportedClient
 errorTypeToException ErrorDataNotInCache = throw . DataNotInCache
 errorTypeToException ErrorUnknownError = throw . UnknownError
+
+-- | Create a consumer and return a handle. The caller must call 'freeConsumer' after finishing using the handle. See 'withConsumer' for a safer version
+createConsumer :: ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> IO Consumer
+createConsumer serverName sourcePath filesystemFlag sourceCredentials = do
+  result <- PC.createConsumer serverName sourcePath filesystemFlag sourceCredentials
+  case result of
+    Left (Error errorMessage errorType) -> errorTypeToException errorType errorMessage
+    Right v -> pure v
+
+-- | Free the consumer handle. This function is only useful in tandem with 'createConsumer'
+freeConsumer :: Consumer -> IO ()
+freeConsumer = PC.freeConsumer
 
 -- | Create a consumer and do something with it. This is the main entrypoint into the consumer
 withConsumer :: forall a. ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> (Consumer -> IO a) -> IO a

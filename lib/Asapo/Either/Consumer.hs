@@ -26,6 +26,8 @@ module Asapo.Either.Consumer
     Error (..),
     ErrorType (..),
     withConsumer,
+    createConsumer,
+    freeConsumer,
     retrieveDataForMessageMeta,
     queryMessages,
     resendNacs,
@@ -170,23 +172,29 @@ withSuccess toCheck onSuccess = do
     Left e -> pure (Left e)
     Right success -> onSuccess success
 
-create :: ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> IO (Either Error AsapoConsumerHandle)
-create (ServerName serverName) (SourcePath sourcePath) fsFlag creds =
+-- | Create a consumer and return a handle. The caller must call 'freeConsumer' after finishing using the handle. See 'withConsumer' for a safer version
+createConsumer :: ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> IO (Either Error Consumer)
+createConsumer (ServerName serverName) (SourcePath sourcePath) fsFlag creds =
   withCredentials creds \creds' ->
     withConstText serverName \serverNameC ->
       withConstText sourcePath \sourcePathC ->
-        checkError (asapo_create_consumer serverNameC sourcePathC (if fsFlag == WithFilesystem then 1 else 0) creds')
+        -- first <$> to go into IO, second <$> to go into the Either
+        (Consumer <$>) <$> checkError (asapo_create_consumer serverNameC sourcePathC (if fsFlag == WithFilesystem then 1 else 0) creds')
+
+-- | Free the consumer handle. This function is only useful in tandem with 'createConsumer'
+freeConsumer :: Consumer -> IO ()
+freeConsumer (Consumer c) = asapo_free_consumer_handle c
 
 -- | Create a consumer and do something with it. This is the main entrypoint into the consumer
 withConsumer :: forall a. ServerName -> SourcePath -> FilesystemFlag -> SourceCredentials -> (Error -> IO a) -> (Consumer -> IO a) -> IO a
-withConsumer serverName sourcePath filesystemFlag creds onError onSuccess = bracket (create serverName sourcePath filesystemFlag creds) freeConsumer handle
+withConsumer serverName sourcePath filesystemFlag creds onError onSuccess = bracket (createConsumer serverName sourcePath filesystemFlag creds) freeConsumer' handle
   where
-    freeConsumer :: Either Error AsapoConsumerHandle -> IO ()
-    freeConsumer (Right h) = asapo_free_consumer_handle h
-    freeConsumer _ = pure ()
-    handle :: Either Error AsapoConsumerHandle -> IO a
+    freeConsumer' :: Either Error Consumer -> IO ()
+    freeConsumer' (Right h) = freeConsumer h
+    freeConsumer' _ = pure ()
+    handle :: Either Error Consumer -> IO a
     handle (Left e) = onError e
-    handle (Right v) = onSuccess (Consumer v)
+    handle (Right v) = onSuccess v
 
 -- | Wrapper around a group ID
 newtype GroupId = GroupId AsapoStringHandle
