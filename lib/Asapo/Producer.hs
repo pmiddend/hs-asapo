@@ -103,7 +103,9 @@ module Asapo.Producer
     Opcode (..),
     GenericRequestHeader (..),
 
-    -- * Initialization
+    -- * Initialization/finalization
+    createProducer,
+    freeProducer,
     withProducer,
 
     -- * Getters
@@ -191,6 +193,18 @@ import Prelude ()
 newtype ProducerException = ProducerException Text deriving (Show)
 
 instance Exception ProducerException
+
+-- | Create a producer and return a handle. The caller must call 'freeProducer' after finishing using the handle. See 'withProducer' for a safer version
+createProducer :: Endpoint -> ProcessingThreads -> RequestHandlerType -> SourceCredentials -> NominalDiffTime -> IO Producer
+createProducer endpoint processingThreads handlerType sourceCredentials timeout = do
+  result <- PlainProducer.createProducer endpoint processingThreads handlerType sourceCredentials timeout
+  case result of
+    Left (Error errorMessage) -> throw (ProducerException errorMessage)
+    Right v -> pure v
+
+-- | Free the producer handle. This function is only useful in tandem with 'createProducer'
+freeProducer :: Producer -> IO ()
+freeProducer = PlainProducer.freeProducer
 
 -- | Create a producer and do something with it. This is the main entrypoint into the producer.
 withProducer ::

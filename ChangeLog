@@ -1,5 +1,9 @@
 2025-09-12  Philipp Middendorf  <philipp.middendorf@desy.de>
 
+	* Add createConsumer and createProducer functions (with free in tandem)
+
+2025-09-12  Philipp Middendorf  <philipp.middendorf@desy.de>
+
 	* Fix memory issue when sending raw data
 	* Update to latest asapo version
 	* Make consumer a bit more powerful
