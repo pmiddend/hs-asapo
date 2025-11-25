@@ -55,6 +55,8 @@ library
     , timerep >= 2.1.0 && < 2.2
     -- for the HL interface to send
     , bytestring  >= 0.11.5 && < 0.13
+    -- for the Storable instance of SendCallback
+    , derive-storable >= 0.3.0.0 && < 0.4
 
   pkgconfig-depends: libasapo-consumer
                    , libasapo-producer
