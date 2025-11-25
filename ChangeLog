@@ -1,3 +1,7 @@
+2025-11-24  Philipp Middendorf  <philipp.middendorf@desy.de>
+
+	* Add getNextAvailable family of functions
+
 2025-09-12  Philipp Middendorf  <philipp.middendorf@desy.de>
 
 	* Add createConsumer and createProducer functions (with free in tandem)

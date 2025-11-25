@@ -43,6 +43,9 @@ module Asapo.Either.Consumer
     getNextMessageMetaAndData,
     getNextMessageMeta,
     getNextMessageData,
+    getNextAvailableMessageMetaAndData,
+    getNextAvailableMessageMeta,
+    getNextAvailableMessageData,
     getCurrentDatasetCount,
     getBeamtimeMeta,
     getCurrentSize,
@@ -68,7 +71,7 @@ where
 
 import Asapo.Either.Common (MessageId (MessageId), SourceCredentials, StreamInfo, StreamName (StreamName), nominalDiffToMillis, peekConstCStringText, retrieveStreamInfoFromC, stringHandleToText, timespecToUTC, withCStringNToText, withConstText, withCredentials, withPtr)
 import Asapo.Raw.Common (AsapoErrorHandle, AsapoMessageDataHandle (AsapoMessageDataHandle), AsapoStringHandle, ConstCString, asapo_error_explain, asapo_free_error_handle, asapo_free_stream_infos_handle, asapo_free_string_handle, asapo_is_error, asapo_new_error_handle, asapo_stream_infos_get_item)
-import Asapo.Raw.Consumer (AsapoConsumerErrorType, AsapoConsumerHandle, AsapoDataSetHandle, AsapoIdListHandle, AsapoMessageMetaHandle (AsapoMessageMetaHandle), AsapoNetworkConnectionType, AsapoStreamFilter, asapo_consumer_acknowledge, asapo_consumer_current_connection_type, asapo_consumer_delete_stream, asapo_consumer_generate_new_group_id, asapo_consumer_get_beamtime_meta, asapo_consumer_get_by_id, asapo_consumer_get_current_dataset_count, asapo_consumer_get_current_size, asapo_consumer_get_last, asapo_consumer_get_last_dataset, asapo_consumer_get_last_dataset_ingroup, asapo_consumer_get_last_ingroup, asapo_consumer_get_next, asapo_consumer_get_next_dataset, asapo_consumer_get_stream_list, asapo_consumer_get_unacknowledged_messages, asapo_consumer_negative_acknowledge, asapo_consumer_query_messages, asapo_consumer_reset_last_read_marker, asapo_consumer_retrieve_data, asapo_consumer_set_last_read_marker, asapo_consumer_set_resend_nacs, asapo_consumer_set_stream_persistent, asapo_consumer_set_timeout, asapo_create_consumer, asapo_dataset_get_expected_size, asapo_dataset_get_id, asapo_dataset_get_item, asapo_dataset_get_size, asapo_error_get_type, asapo_free_consumer_handle, asapo_free_id_list_handle, asapo_free_message_metas_handle, asapo_id_list_get_item, asapo_id_list_get_size, asapo_message_data_get_as_chars, asapo_message_meta_get_buf_id, asapo_message_meta_get_dataset_substream, asapo_message_meta_get_id, asapo_message_meta_get_metadata, asapo_message_meta_get_name, asapo_message_meta_get_size, asapo_message_meta_get_source, asapo_message_meta_get_timestamp, asapo_message_metas_get_item, asapo_message_metas_get_size, asapo_stream_infos_get_size, kAllStreams, kAsapoTcp, kDataNotInCache, kEndOfStream, kFinishedStreams, kInterruptedTransaction, kLocalIOError, kNoData, kPartialData, kStreamFinished, kUnavailableService, kUndefined, kUnfinishedStreams, kUnsupportedClient, kWrongInput)
+import Asapo.Raw.Consumer (AsapoConsumerErrorType, AsapoConsumerHandle, AsapoDataSetHandle, AsapoIdListHandle, AsapoMessageMetaHandle (AsapoMessageMetaHandle), AsapoNetworkConnectionType, AsapoStreamFilter, asapo_consumer_acknowledge, asapo_consumer_current_connection_type, asapo_consumer_delete_stream, asapo_consumer_generate_new_group_id, asapo_consumer_get_beamtime_meta, asapo_consumer_get_by_id, asapo_consumer_get_current_dataset_count, asapo_consumer_get_current_size, asapo_consumer_get_last, asapo_consumer_get_last_dataset, asapo_consumer_get_last_dataset_ingroup, asapo_consumer_get_last_ingroup, asapo_consumer_get_next, asapo_consumer_get_next_available, asapo_consumer_get_next_dataset, asapo_consumer_get_stream_list, asapo_consumer_get_unacknowledged_messages, asapo_consumer_negative_acknowledge, asapo_consumer_query_messages, asapo_consumer_reset_last_read_marker, asapo_consumer_retrieve_data, asapo_consumer_set_last_read_marker, asapo_consumer_set_resend_nacs, asapo_consumer_set_stream_persistent, asapo_consumer_set_timeout, asapo_create_consumer, asapo_dataset_get_expected_size, asapo_dataset_get_id, asapo_dataset_get_item, asapo_dataset_get_size, asapo_error_get_type, asapo_free_consumer_handle, asapo_free_id_list_handle, asapo_free_message_metas_handle, asapo_id_list_get_item, asapo_id_list_get_size, asapo_message_data_get_as_chars, asapo_message_meta_get_buf_id, asapo_message_meta_get_dataset_substream, asapo_message_meta_get_id, asapo_message_meta_get_metadata, asapo_message_meta_get_name, asapo_message_meta_get_size, asapo_message_meta_get_source, asapo_message_meta_get_timestamp, asapo_message_metas_get_item, asapo_message_metas_get_size, asapo_stream_infos_get_size, kAllStreams, kAsapoTcp, kDataNotInCache, kEndOfStream, kFinishedStreams, kInterruptedTransaction, kLocalIOError, kNoData, kPartialData, kStreamFinished, kUnavailableService, kUndefined, kUnfinishedStreams, kUnsupportedClient, kWrongInput)
 import Asapo.Raw.FreeHandleHack (p_asapo_free_handle)
 import Control.Applicative (Applicative ((<*>)), pure)
 import Control.Exception (bracket)
@@ -580,6 +583,22 @@ getNextMessageMeta (Consumer consumer) streamName (GroupId groupId) = withMessag
 -- | Retrieve the next message in the stream and group, only data
 getNextMessageData :: Consumer -> StreamName -> GroupId -> IO (Either Error BS.ByteString)
 getNextMessageData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next consumer groupId) retrieveMessageData
+
+-- | Retrieve the next available message in the stream and group, with data and metadata
+getNextAvailableMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (Either Error (MessageMeta, BS.ByteString))
+getNextAvailableMessageMetaAndData (Consumer consumer) streamName (GroupId groupId) =
+  withMessageHandles
+    streamName
+    (asapo_consumer_get_next_available consumer groupId)
+    retrieveMessageMetaAndData
+
+-- | Retrieve the next available message in the stream and group, only metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getNextAvailableMessageMeta :: Consumer -> StreamName -> GroupId -> IO (Either Error MessageMeta)
+getNextAvailableMessageMeta (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next_available consumer groupId) retrieveMessageMeta
+
+-- | Retrieve the next available message in the stream and group, only data
+getNextAvailableMessageData :: Consumer -> StreamName -> GroupId -> IO (Either Error BS.ByteString)
+getNextAvailableMessageData (Consumer consumer) streamName (GroupId groupId) = withMessageHandles streamName (asapo_consumer_get_next_available consumer groupId) retrieveMessageData
 
 -- | Query messages, return handles without data
 queryMessagesHandles ::

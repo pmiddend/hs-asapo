@@ -66,6 +66,7 @@ module Asapo.Raw.Consumer
     asapo_consumer_get_last,
     asapo_consumer_get_last_ingroup,
     asapo_consumer_get_next,
+    asapo_consumer_get_next_available,
     asapo_consumer_query_messages,
     asapo_consumer_set_resend_nacs,
     asapo_message_data_get_as_chars,
@@ -411,6 +412,18 @@ foreign import capi "asapo/consumer_c.h asapo_consumer_get_last_ingroup"
 
 foreign import capi "asapo/consumer_c.h asapo_consumer_get_next"
   asapo_consumer_get_next ::
+    AsapoConsumerHandle ->
+    -- group id
+    AsapoStringHandle ->
+    Ptr AsapoMessageMetaHandle ->
+    Ptr AsapoMessageDataHandle ->
+    -- stream
+    ConstCString ->
+    Ptr AsapoErrorHandle ->
+    IO CInt
+
+foreign import capi "asapo/consumer_c.h asapo_consumer_get_next_available"
+  asapo_consumer_get_next_available ::
     AsapoConsumerHandle ->
     -- group id
     AsapoStringHandle ->

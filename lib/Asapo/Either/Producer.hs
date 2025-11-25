@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -65,6 +66,7 @@ import Asapo.Raw.Producer
     AsapoMessageHeaderHandle,
     AsapoOpcode,
     AsapoProducerHandle,
+    AsapoRequestCallback,
     AsapoRequestCallbackPayloadHandle,
     asapoLogLevelDebug,
     asapoLogLevelError,
@@ -123,7 +125,7 @@ import Control.Exception (bracket)
 import Data.Bits ((.|.))
 import Data.Bool (Bool)
 import Data.ByteString qualified as BS
-import Data.ByteString.Internal qualified as BSI
+import Data.ByteString.Unsafe (unsafeUseAsCString)
 import Data.Either (Either (Left, Right))
 import Data.Eq (Eq ((==)))
 import Data.Foldable (Foldable (elem))
@@ -133,11 +135,12 @@ import Data.Maybe (Maybe (Just, Nothing))
 import Data.Ord ((>))
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
-import Data.Word (Word64, Word8)
-import Foreign (Storable (peek), alloca, castPtr)
+import Data.Word (Word64)
+import Foreign (Storable (peek), alloca, castPtr, free, freeHaskellFunPtr, new)
 import Foreign.C.ConstPtr (ConstPtr (unConstPtr))
-import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
-import Foreign.Ptr (Ptr)
+import Foreign.Ptr (FunPtr, Ptr)
+import Foreign.Storable.Generic (GStorable)
+import GHC.Generics (Generic)
 import System.IO (IO)
 import Text.Show (Show)
 import Prelude (fromIntegral)
@@ -485,23 +488,35 @@ data RequestResponse = RequestResponse
 
 sendRequestCallback ::
   (RequestResponse -> IO ()) ->
-  Maybe (ForeignPtr Word8) ->
+  Maybe BS.ByteString ->
+  -- Maybe (ForeignPtr Word8) ->
+  Ptr () ->
   Ptr () ->
   AsapoRequestCallbackPayloadHandle ->
   AsapoErrorHandle ->
   IO ()
-sendRequestCallback simpleCallback _dataAsForeignPtr _data payloadHandle errorHandle = do
+sendRequestCallback simpleCallback _dataAsForeignPtr _data userPtr payloadHandle errorHandle = do
   payloadText <- bracket (asapo_request_callback_payload_get_response payloadHandle) asapo_free_string_handle stringHandleToTextUnsafe
   originalHeaderCPtr <- asapo_request_callback_payload_get_original_header payloadHandle
   originalHeaderC <- peek (unConstPtr originalHeaderCPtr)
   originalHeader <- convertRequestHeader originalHeaderC
   errorHandle' <- checkErrorWithGivenHandle errorHandle ()
+  let sendContextPtr :: Ptr SendCallbackContext
+      sendContextPtr = castPtr userPtr
+  sendContext <- peek sendContextPtr
+  -- First free the closure thingy that Haskell created, then the context it was in
+  freeHaskellFunPtr (_sendCallbackContextFunPtr sendContext)
+  free sendContextPtr
   case errorHandle' of
     Left e -> simpleCallback (RequestResponse payloadText originalHeader (Just e))
     Right _ -> simpleCallback (RequestResponse payloadText originalHeader Nothing)
 
-toJustForeignPtr :: (a, b, c) -> a
-toJustForeignPtr (p, _offset, _length) = p
+newtype SendCallbackContext = SendCallbackContext
+  { _sendCallbackContextFunPtr :: FunPtr AsapoRequestCallback
+  }
+  deriving (Generic)
+
+instance GStorable SendCallbackContext
 
 -- | Send a message containing raw data. Due to newtype and enum usage, all parameter should be self-explanatory
 send ::
@@ -529,28 +544,29 @@ send (Producer producer) messageId fileName metadata datasetSubstream datasetSiz
     (BS.length data')
     \messageHeaderHandle -> do
       withConstText stream \streamC -> do
-        let word8Ptr :: ForeignPtr Word8
-            word8Ptr = toJustForeignPtr (BSI.toForeignPtr data')
         requestCallback <-
           createRequestCallback
             ( sendRequestCallback
                 callback
-                -- We pass this ptr to the callback to keep the GC from collecting it
-                (Just word8Ptr)
+                (Just data')
             )
-        withForeignPtr word8Ptr \dataPtr ->
-          ( fromIntegral
-              <$>
-          )
-            <$> checkError
+        contextPtr <- new (SendCallbackContext requestCallback)
+        -- Technically this is unsafe, because the memory for "data"
+        -- might be freed after this call. However, since we pass the
+        -- bytestring to the closure, let's hope it's fine.
+        unsafeUseAsCString data' \dataPtrAsCString -> do
+          result <-
+            checkError
               ( asapo_producer_send
                   producer
                   messageHeaderHandle
-                  (castPtr dataPtr)
+                  (castPtr dataPtrAsCString)
                   (convertSendFlags transferFlag storageFlag)
                   streamC
+                  (castPtr contextPtr)
                   requestCallback
               )
+          pure (fromIntegral <$> result)
 
 -- | Send a message containing a file. Due to newtype and enum usage, all parameter should be self-explanatory
 sendFile ::
@@ -583,6 +599,7 @@ sendFile (Producer producer) messageId fileName meta datasetSubstream datasetSiz
     \messageHeaderHandle ->
       withConstText fileNameToSend \fileNameToSendC -> withConstText stream \streamC -> do
         requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
+        contextPtr <- new (SendCallbackContext requestCallback)
         ( fromIntegral
             <$>
           )
@@ -593,6 +610,7 @@ sendFile (Producer producer) messageId fileName meta datasetSubstream datasetSiz
                 fileNameToSendC
                 (convertSendFlags transferFlag storageFlag)
                 streamC
+                (castPtr contextPtr)
                 requestCallback
             )
 
@@ -600,7 +618,8 @@ sendFile (Producer producer) messageId fileName meta datasetSubstream datasetSiz
 sendStreamFinishedFlag :: Producer -> StreamName -> MessageId -> StreamName -> (RequestResponse -> IO ()) -> IO (Either Error Int)
 sendStreamFinishedFlag (Producer producer) (StreamName stream) (MessageId lastId) (StreamName nextStream) callback = do
   requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
-  withConstText stream \streamC -> withConstText nextStream \nextStreamC ->
+  withConstText stream \streamC -> withConstText nextStream \nextStreamC -> do
+    contextPtr <- new (SendCallbackContext requestCallback)
     (fromIntegral <$>)
       <$> checkError
         ( asapo_producer_send_stream_finished_flag
@@ -608,6 +627,7 @@ sendStreamFinishedFlag (Producer producer) (StreamName stream) (MessageId lastId
             streamC
             lastId
             nextStreamC
+            (castPtr contextPtr)
             requestCallback
         )
 
@@ -620,7 +640,8 @@ sendBeamtimeMetadata :: Producer -> Metadata -> MetadataIngestMode -> UpsertMode
 sendBeamtimeMetadata (Producer producer) (Metadata metadata) ingestMode upsertMode callback = do
   requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
   (fromIntegral <$>)
-    <$> withConstText metadata \metadataC ->
+    <$> withConstText metadata \metadataC -> do
+      contextPtr <- new (SendCallbackContext requestCallback)
       checkError
         ( asapo_producer_send_beamtime_metadata
             producer
@@ -634,6 +655,7 @@ sendBeamtimeMetadata (Producer producer) (Metadata metadata) ingestMode upsertMo
                 UseUpsert -> 1
                 _ -> 0
             )
+            (castPtr contextPtr)
             requestCallback
         )
 
@@ -642,7 +664,8 @@ sendStreamMetadata :: Producer -> Metadata -> MetadataIngestMode -> UpsertMode -
 sendStreamMetadata (Producer producer) (Metadata metadata) ingestMode upsertMode (StreamName stream) callback = do
   requestCallback <- createRequestCallback (sendRequestCallback callback Nothing)
   (fromIntegral <$>)
-    <$> withConstText metadata \metadataC -> withConstText stream \streamC ->
+    <$> withConstText metadata \metadataC -> withConstText stream \streamC -> do
+      contextPtr <- new (SendCallbackContext requestCallback)
       checkError
         ( asapo_producer_send_stream_metadata
             producer
@@ -657,6 +680,7 @@ sendStreamMetadata (Producer producer) (Metadata metadata) ingestMode upsertMode
                 _ -> 0
             )
             streamC
+            (castPtr contextPtr)
             requestCallback
         )
 

@@ -8,15 +8,16 @@
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
+    desy-flake.url = "git+https://gitlab.desy.de/philipp.middendorf/desy-flake";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, desy-flake }:
     flake-utils.lib.eachDefaultSystem
       (system:
         let
           pkgs = import nixpkgs {
             inherit system;
-            overlays = [ ];
+            overlays = [ desy-flake.overlays.default ];
           };
 
           haskellPackages = pkgs.haskellPackages.override
@@ -25,51 +26,17 @@
             };
 
           packageName = "hs-asapo";
-
-          asapo-core = with pkgs; stdenv.mkDerivation rec {
-            pname = "asapo";
-
-            version = "25.03.0";
-
-            src = fetchurl {
-              url = "https://gitlab.desy.de/asapo/asapo/-/archive/${version}/asapo-${version}.tar.gz";
-              hash = "sha256-DzqjHU4iqunrPTNV22D7FHZTBNzTh1A75qxfc2/VHBE=";
-            };
-
-            nativeBuildInputs = [ cmake ];
-
-            buildInputs = [
-              curl
-              rdkafka
-              mongoc
-              cyrus_sasl
-              # Python is not strictly needed, but the build wants it present.
-              python3
-            ];
-
-            cmakeFlags = [
-              "-DBUILD_PYTHON=OFF"
-              # This is actually just to let cmake not build the clients. We
-              # build them ourselves, with Nix methods.
-              "-DBUILD_CLIENTS_ONLY=ON"
-            ];
-
-            # Currently, asapo needs git to evaluate the current branch, which
-            # doesn't work when you have a tar file as the source.
-            # patches = [ ./remove-git-references.patch ./fix-kDefaultIngestMode.patch ];
-            patches = [ ./remove-git-references.patch ./fix-gcc-14.patch ];
-          };
         in
         {
           packages.${packageName} =
             haskellPackages.callCabal2nix packageName self {
-              libasapo-consumer = asapo-core;
-              libasapo-producer = asapo-core;
+              libasapo-consumer = pkgs.asapo-libs-devel;
+              libasapo-producer = pkgs.asapo-libs-devel;
             };
 
           packages.default = self.packages.${system}.${packageName};
 
-          packages.asapo-core = asapo-core;
+          packages.asapo-core = pkgs.asapo-libs-devel;
 
           defaultPackage = self.packages.${system}.default;
 
@@ -82,7 +49,7 @@
                 ghcid
                 haskellPackages.hlint
                 haskellPackages.apply-refact
-                asapo-core
+                asapo-libs-devel
                 pkg-config
               ];
               inputsFrom = [ self.packages.${system}.hs-asapo.env ];

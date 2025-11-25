@@ -113,6 +113,9 @@ module Asapo.Consumer
     getNextMessageMetaAndData,
     getNextMessageMeta,
     getNextMessageData,
+    getNextAvailableMessageMetaAndData,
+    getNextAvailableMessageMeta,
+    getNextAvailableMessageData,
     getLastMessageMetaAndData,
     getLastMessageMeta,
     getLastMessageData,
@@ -456,6 +459,18 @@ getNextMessageMeta consumer streamName groupId = maybeThrow (PC.getNextMessageMe
 -- | Retrieve the next message in the stream and group, only data
 getNextMessageData :: Consumer -> StreamName -> GroupId -> IO BS.ByteString
 getNextMessageData consumer streamName groupId = maybeThrow (PC.getNextMessageData consumer streamName groupId)
+
+-- | Retrieve the next available message in the stream and group, with data and metadata
+getNextAvailableMessageMetaAndData :: Consumer -> StreamName -> GroupId -> IO (MessageMeta, BS.ByteString)
+getNextAvailableMessageMetaAndData consumer streamName groupId = maybeThrow (PC.getNextAvailableMessageMetaAndData consumer streamName groupId)
+
+-- | Retrieve the next available message in the stream and group, only metadata (you can get the data later with 'retrieveDataFromMessageMeta')
+getNextAvailableMessageMeta :: Consumer -> StreamName -> GroupId -> IO MessageMeta
+getNextAvailableMessageMeta consumer streamName groupId = maybeThrow (PC.getNextAvailableMessageMeta consumer streamName groupId)
+
+-- | Retrieve the next available message in the stream and group, only data
+getNextAvailableMessageData :: Consumer -> StreamName -> GroupId -> IO BS.ByteString
+getNextAvailableMessageData consumer streamName groupId = maybeThrow (PC.getNextAvailableMessageData consumer streamName groupId)
 
 -- | Query messages, return handles without data
 queryMessages ::

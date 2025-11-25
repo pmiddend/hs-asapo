@@ -109,7 +109,11 @@ newtype {-# CTYPE "asapo/producer_c.h" "AsapoMessageHeaderHandle" #-} AsapoMessa
 asapo_free_message_header_handle :: AsapoMessageHeaderHandle -> IO ()
 asapo_free_message_header_handle (AsapoMessageHeaderHandle ptr) = with ptr \ptr' -> asapo_free_handle ptr'
 
-type AsapoRequestCallback = Ptr () -> AsapoRequestCallbackPayloadHandle -> AsapoErrorHandle -> IO ()
+type AsapoRequestCallback =
+  -- data ptr
+  Ptr () ->
+  -- user ptr
+  Ptr () -> AsapoRequestCallbackPayloadHandle -> AsapoErrorHandle -> IO ()
 
 foreign import ccall "wrapper" createRequestCallback :: AsapoRequestCallback -> IO (FunPtr AsapoRequestCallback)
 
@@ -321,6 +325,8 @@ foreign import capi "asapo/producer_c.h asapo_producer_send"
     Word64 ->
     -- stream
     ConstCString ->
+    -- user ptr
+    Ptr () ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
@@ -335,6 +341,8 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_file"
     Word64 ->
     -- stream
     ConstCString ->
+    -- user ptr
+    Ptr () ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
@@ -348,6 +356,8 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_stream_finished_flag
     Word64 ->
     -- next stream
     ConstCString ->
+    -- user ptr
+    Ptr () ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
@@ -360,6 +370,8 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_beamtime_metadata"
     AsapoMetaIngestOp ->
     -- upsert
     AsapoBool ->
+    -- user ptr
+    Ptr () ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
@@ -374,6 +386,8 @@ foreign import capi "asapo/producer_c.h asapo_producer_send_stream_metadata"
     AsapoBool ->
     -- stream
     ConstCString ->
+    -- user data ptr
+    Ptr () ->
     FunPtr AsapoRequestCallback ->
     Ptr AsapoErrorHandle ->
     IO CInt
