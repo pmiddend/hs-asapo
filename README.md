@@ -1,3 +1,7 @@
+# MOVED TO CODEBERG
+
+**This repo has move to codeberg.org**: [New URL](https://codeberg.org/pmiddend/hs-asapo)
+
 # hs-asapo - Haskell bindings to ASAP:O
 
 [![CI](https://github.com/pmiddend/hs-asapo/actions/workflows/build-with-nix.yaml/badge.svg)](https://github.com/pmiddend/hs-asapo/actions/workflows/build-with-nix.yaml)
