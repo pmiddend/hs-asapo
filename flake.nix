@@ -6,9 +6,12 @@
   description = "hs-asapo";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-25.05";
+    nixpkgs.url = "nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
-    desy-flake.url = "git+https://gitlab.desy.de/philipp.middendorf/desy-flake";
+    desy-flake = {
+      url = "git+https://gitlab.desy.de/philipp.middendorf/desy-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, flake-utils, desy-flake }:
@@ -30,13 +33,13 @@
         {
           packages.${packageName} =
             haskellPackages.callCabal2nix packageName self {
-              libasapo-consumer = pkgs.asapo-libs-devel;
-              libasapo-producer = pkgs.asapo-libs-devel;
+              libasapo-consumer = pkgs.asapo-libs;
+              libasapo-producer = pkgs.asapo-libs;
             };
 
           packages.default = self.packages.${system}.${packageName};
 
-          packages.asapo-core = pkgs.asapo-libs-devel;
+          packages.asapo-libs = pkgs.asapo-libs;
 
           defaultPackage = self.packages.${system}.default;
 
@@ -48,8 +51,7 @@
                 gdb
                 ghcid
                 haskellPackages.hlint
-                haskellPackages.apply-refact
-                asapo-libs-devel
+                asapo-libs
                 pkg-config
               ];
               inputsFrom = [ self.packages.${system}.hs-asapo.env ];

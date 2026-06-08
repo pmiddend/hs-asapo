@@ -2,15 +2,17 @@
   "nodes": {
     "desy-flake": {
       "inputs": {
-        "nixpkgs": "nixpkgs",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
         "simplon-stub": "simplon-stub"
       },
       "locked": {
-        "lastModified": 1763978305,
-        "narHash": "sha256-HyacSPDgdFt6NDn5tbtS1a5KoOLKxd/vikEBM6MCsHU=",
+        "lastModified": 1780554390,
+        "narHash": "sha256-sspzA59W3Dp/AOKnfhRfZGg4tu6y6HalilXd5I0EkyQ=",
         "ref": "refs/heads/main",
-        "rev": "99eb01c54bc44e961fc3fd00e2ee414c9bb3cbae",
-        "revCount": 13,
+        "rev": "da9d3c30a9a2a2bfa97cf88f0c504a405844697b",
+        "revCount": 18,
         "type": "git",
         "url": "https://gitlab.desy.de/philipp.middendorf/desy-flake"
       },
@@ -39,47 +41,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1751741127,
-        "narHash": "sha256-t75Shs76NgxjZSgvvZZ9qOmz5zuBE8buUaYD28BMTxg=",
+        "lastModified": 1780734595,
+        "narHash": "sha256-DmTfP92QFYRLOGXlMIE54MAgxSJjDWocl3gRNOu72Os=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "29e290002bfff26af1db6f64d070698019460302",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-25.05",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1743367904,
-        "narHash": "sha256-sOos1jZGKmT6xxPvxGQyPTApOunXvScV4lNjBCXd/CI=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "7ffe0edc685f14b8c635e3d6591b0bbb97365e6c",
+        "rev": "9b696460ac78b5ccfc17c854d8c976f20456e943",
         "type": "github"
       },
       "original": {
         "id": "nixpkgs",
-        "ref": "nixos-24.11",
-        "type": "indirect"
-      }
-    },
-    "nixpkgs_3": {
-      "locked": {
-        "lastModified": 1763622513,
-        "narHash": "sha256-1jQnuyu82FpiSxowrF/iFK6Toh9BYprfDqfs4BB+19M=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "c58bc7f5459328e4afac201c5c4feb7c818d604b",
-        "type": "github"
-      },
-      "original": {
-        "id": "nixpkgs",
-        "ref": "nixos-25.05",
+        "ref": "nixos-26.05",
         "type": "indirect"
       }
     },
@@ -87,19 +58,22 @@
       "inputs": {
         "desy-flake": "desy-flake",
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs_3"
+        "nixpkgs": "nixpkgs"
       }
     },
     "simplon-stub": {
       "inputs": {
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": [
+          "desy-flake",
+          "nixpkgs"
+        ]
       },
       "locked": {
-        "lastModified": 1744289673,
-        "narHash": "sha256-gV0odQHXKnu/P8gtOJR7qaR3QZbEDHxvLqN2Mf0LK6A=",
+        "lastModified": 1780293944,
+        "narHash": "sha256-dFAi1BRNGcpJYPsz1nm9mHg8bbPtFzehWgv7E4CWWYU=",
         "owner": "pmiddend",
         "repo": "simplon-stub",
-        "rev": "d93b422e059c85fbd5b9191da69fa32f8c34575d",
+        "rev": "9db2d672ce0e001a5c2d2737ddaea177de287438",
         "type": "github"
       },
       "original": {
